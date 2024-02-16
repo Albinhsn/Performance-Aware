@@ -49,7 +49,7 @@ bool read_file(unsigned char **buffer, int *len, const char *fileName) {
 }
 
 void debugByte(ui8 byte) {
-  for (int i = 0; i < 8; i++) {
+  for (int i = 7; i >= 0; i--) {
     printf("%d", byte >> i & 0b1);
   }
   printf("\n");
@@ -79,7 +79,7 @@ int main() {
   ui8 *end;
   ui8 current;
   int len;
-  const char *name = "t3";
+  const char *name = "t4";
   read_file(&buffer, &len, name);
 
   end = buffer + len;
@@ -103,6 +103,67 @@ int main() {
         printf("mov %s, %d\n", registerToRegisterEncoding8[reg], immediate);
       }
 
+    } else if (((current >> 1) & 0b1111111) == 0b1010001) {
+
+      char source[32];
+      memset(&source, 0, 16);
+      char dest[32];
+      memset(&dest, 0, 16);
+
+      bool w = current & 0b1;
+      advance(&current, &buffer);
+      ui16 offset = current;
+      advance(&current, &buffer);
+      offset = (current << 8) | offset;
+      if(w){
+        printf("mov [%d], ax\n", offset);
+      }else{
+        printf("mov ax, [%d]\n", offset);
+      }
+
+    } else if (((current >> 1) & 0b1111111) == 0b1100011) {
+      char source[32];
+      memset(&source, 0, 16);
+      char dest[32];
+      memset(&dest, 0, 16);
+
+      bool w = current & 0b1;
+      advance(&current, &buffer);
+      ui8 mod = (current >> 6) & 0b11;
+      ui8 rm = current & 0b111;
+      advance(&current, &buffer);
+
+      if (mod == 0b00) {
+        sprintf(&dest[0], "[%s]", registerMemoryEncoding0[rm]);
+      } else if (mod == 0b10) {
+        ui16 offset = current;
+        advance(&current, &buffer);
+        offset = (current << 8) | offset;
+        advance(&current, &buffer);
+
+        sprintf(&dest[0], "[%s + %d]", registerMemoryEncoding0[rm], offset);
+      } else if (mod == 0b01) {
+        ui8 offset = current;
+        advance(&current, &buffer);
+        sprintf(&dest[0], "[%s + %d]", registerMemoryEncoding0[rm], offset);
+      } else {
+        printf("HUH\n");
+      }
+
+      ui16 offset = current;
+      if (w) {
+        advance(&current, &buffer);
+        offset = (current << 8) | offset;
+        sprintf(&source[0], "word %d", offset);
+      } else {
+        sprintf(&source[0], "byte %d", offset);
+      }
+
+      char **encoding =
+          w ? registerToRegisterEncoding16 : registerToRegisterEncoding8;
+
+      printf("mov %s, %s\n", dest, source);
+
     } else if ((current >> 2 & 0b111111) == 0b100010) {
       bool d = ((current >> 1) & 1);
       bool w = (current & 1);
@@ -121,18 +182,29 @@ int main() {
       char **encoding =
           w ? registerToRegisterEncoding16 : registerToRegisterEncoding8;
 
-      // reg to reg
       if (mod == 0b00) {
         if (!d) {
-          strcpy(&dest[0], encoding[reg]);
-          sprintf(&source[0], "[%s]", registerMemoryEncoding0[rm]);
-        } else {
           strcpy(&source[0], encoding[reg]);
           sprintf(&dest[0], "[%s]", registerMemoryEncoding0[rm]);
+        } else {
+          if (rm == 0b110) {
+            advance(&current, &buffer);
+            ui16 offset = current;
+            if (w) {
+              advance(&current, &buffer);
+              offset = (current << 8) | offset;
+            }
+            sprintf(&source[0], "[%d]", offset);
+            strcpy(&dest[0], encoding[reg]);
+          } else {
+            strcpy(&dest[0], encoding[reg]);
+            sprintf(&source[0], "[%s]", registerMemoryEncoding0[rm]);
+          }
         }
+
       } else if (mod == 0b11) {
-        strcpy(&source[0], encoding[d ? reg : rm]);
-        strcpy(&dest[0], encoding[d ? rm : reg]);
+        strcpy(&dest[0], encoding[d ? reg : rm]);
+        strcpy(&source[0], encoding[d ? rm : reg]);
       } else {
 
         advance(&current, &buffer);
@@ -145,28 +217,27 @@ int main() {
 
         char *location = registerMemoryEncoding1[rm];
         if (!d) {
-          strcpy(&dest[0], encoding[reg]);
-          if (offset != 0) {
-            sprintf(&source[0], "[%s + %d]", location, offset);
-          } else {
-            sprintf(&source[0], "[%s]", location);
-          }
-
-        } else {
           strcpy(&source[0], encoding[reg]);
           if (offset != 0) {
             sprintf(&dest[0], "[%s + %d]", location, offset);
           } else {
             sprintf(&dest[0], "[%s]", location);
           }
+
+        } else {
+          strcpy(&dest[0], encoding[reg]);
+          if (offset != 0) {
+            sprintf(&source[0], "[%s + %d]", location, offset);
+          } else {
+            sprintf(&source[0], "[%s]", location);
+          }
         }
       }
 
-      printf("mov %s, %s\n", source, dest);
-
+      printf("mov %s, %s\n", dest, source);
     } else {
-      printf("UNKNOWN INSTRUCTION ");
-      debugByte(current);
+      // printf("UNKNOWN INSTRUCTION ");
+      // debugByte(current);
     }
   }
 }
