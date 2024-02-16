@@ -145,13 +145,22 @@ static void parseImmediateToReg(ui8 **buffer, ui8 *current, ui8 immediate,
     printf("mov %s, %d\n", registerToRegisterEncoding8[reg], immediate);
   }
 }
-static void parseRegMemory(ui8 **buffer, ui8 *current, ui8 mod, ui8 reg, ui8 rm,
-                           bool d, bool w) {
+static void parseRegMemory(ui8 **buffer, ui8 *current, char *instruction) {
+
+  bool d = ((*current >> 1) & 1);
+  bool w = (*current & 1);
+
+  advance(current, buffer);
+  ui8 mod = (*current >> 6) & 0b11;
+  ui8 reg = (*current >> 3) & 0b111;
+  ui8 rm = *current & 0b111;
+
   char **encoding =
       w ? registerToRegisterEncoding16 : registerToRegisterEncoding8;
   char res[32];
   parseRegMemoryFieldCoding(&res[0], buffer, current, mod, w, rm);
-  printf("%s, %s\n", d ? encoding[reg] : res, d ? res : encoding[reg]);
+  printf("%s %s, %s\n", instruction, d ? encoding[reg] : res,
+         d ? res : encoding[reg]);
 }
 
 static void parseAccumulatorToMemory(ui8 **buffer, ui8 *current) {}
@@ -216,13 +225,6 @@ static void parseImmediateToRegMemoryAddSubCmp(ui8 **buffer, ui8 *current) {
   parseImmediateToRegMemory(buffer, current, mod, rm, w, s, false);
 }
 static void parseAccumulatorToMemoryMov(ui8 **buffer, ui8 *current, bool mta) {
-#if DEBUG
-  printf("Accumulator to memory mov\n\t");
-#endif
-  char source[32];
-  memset(&source, 0, 16);
-  char dest[32];
-  memset(&dest, 0, 16);
 
   bool w = *current & 0b1;
   advance(current, buffer);
@@ -237,9 +239,6 @@ static void parseAccumulatorToMemoryMov(ui8 **buffer, ui8 *current, bool mta) {
 }
 
 static void parseImmediateToRegMemoryMove(ui8 **buffer, ui8 *current) {
-#if DEBUG
-  printf("Immediate to Reg Memory mov\n\t");
-#endif
 
   bool w = *current & 0b1;
   advance(current, buffer);
@@ -249,74 +248,7 @@ static void parseImmediateToRegMemoryMove(ui8 **buffer, ui8 *current) {
   parseImmediateToRegMemory(buffer, current, mod, rm, w, 0, true);
 }
 
-static void parseRegMemoryCmp(ui8 **buffer, ui8 *current) {
-#if DEBUG
-  printf("ADD Reg/memory with register to either\n\t");
-#endif
-  bool d = ((*current >> 1) & 1);
-  bool w = (*current & 1);
-
-  advance(current, buffer);
-  ui8 mod = (*current >> 6) & 0b11;
-  ui8 reg = (*current >> 3) & 0b111;
-  ui8 rm = *current & 0b111;
-
-  printf("cmp ");
-  parseRegMemory(buffer, current, mod, reg, rm, d, w);
-}
-
-static void parseRegMemorySub(ui8 **buffer, ui8 *current) {
-#if DEBUG
-  printf("ADD Reg/memory with register to either\n\t");
-#endif
-  bool d = ((*current >> 1) & 1);
-  bool w = (*current & 1);
-
-  advance(current, buffer);
-  ui8 mod = (*current >> 6) & 0b11;
-  ui8 reg = (*current >> 3) & 0b111;
-  ui8 rm = *current & 0b111;
-
-  printf("sub ");
-  parseRegMemory(buffer, current, mod, reg, rm, d, w);
-}
-
-static void parseRegMemoryAdd(ui8 **buffer, ui8 *current) {
-#if DEBUG
-  printf("ADD Reg/memory with register to either\n\t");
-#endif
-  bool d = ((*current >> 1) & 1);
-  bool w = (*current & 1);
-
-  advance(current, buffer);
-  ui8 mod = (*current >> 6) & 0b11;
-  ui8 reg = (*current >> 3) & 0b111;
-  ui8 rm = *current & 0b111;
-
-  printf("add ");
-  parseRegMemory(buffer, current, mod, reg, rm, d, w);
-}
-
-static void parseRegMemoryMove(ui8 **buffer, ui8 *current) {
-#if DEBUG
-  printf("Reg Memory Move\n\t");
-#endif
-  bool d = ((*current >> 1) & 1);
-  bool w = (*current & 1);
-
-  advance(current, buffer);
-  ui8 mod = (*current >> 6) & 0b11;
-  ui8 reg = (*current >> 3) & 0b111;
-  ui8 rm = *current & 0b111;
-
-  printf("mov ");
-  parseRegMemory(buffer, current, mod, reg, rm, d, w);
-}
-
 static void parseJump(ui8 **buffer, ui8 *current, char *instruction) {
-#if DEBUG
-  printf("Reg Memory Move\n\t");
-#endif
   advance(current, buffer);
   printf("%s %d\n", instruction, *current);
 }
@@ -403,13 +335,13 @@ int main() {
   while (buffer < end) {
     advance(&current, &buffer);
     if (matchRegMemoryAdd(current)) {
-      parseRegMemoryAdd(&buffer, &current);
+      parseRegMemory(&buffer, &current, "add");
 
     } else if (matchRegMemoryCmp(current)) {
-      parseRegMemoryCmp(&buffer, &current);
+      parseRegMemory(&buffer, &current, "cmp");
 
     } else if (matchRegMemorySub(current)) {
-      parseRegMemorySub(&buffer, &current);
+      parseRegMemory(&buffer, &current, "sub");
 
     } else if (matchImmediateToRegMemory(current)) {
       parseImmediateToRegMemoryAddSubCmp(&buffer, &current);
@@ -436,7 +368,7 @@ int main() {
       parseImmediateToRegMemoryMove(&buffer, &current);
 
     } else if (matchRegMemoryMove(current)) {
-      parseRegMemoryMove(&buffer, &current);
+      parseRegMemory(&buffer, &current, "mov");
 
     } else if (matchJE(current)) {
       parseJump(&buffer, &current, "je");
