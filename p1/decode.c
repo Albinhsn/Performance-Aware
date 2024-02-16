@@ -86,6 +86,8 @@ struct EffectiveAddress
 };
 typedef struct EffectiveAddress EffectiveAddress;
 
+char*                           registerNames[] = {"A", "C", "D", "B", "SP", "BP", "SI", "DI"};
+
 enum RegisterType
 {
   A,
@@ -705,12 +707,80 @@ static inline bool matchRegMemoryMove(ui8 current)
   return (current >> 2 & 0b111111) == 0b100010;
 }
 
+void setRegisterValue(ui16* reg, ui16 value, ImmediateSize size, ui8 offset)
+{
+  if (offset == 0)
+  {
+    if (size == EIGHT)
+    {
+      ui8 v = (ui8)value;
+      *reg  = *reg & 0x00FF;
+      *reg  = *reg | v;
+    }
+    else
+    {
+      *reg = value;
+    }
+  }
+  else
+  {
+    ui8 v = (ui8)value;
+    *reg  = *reg & 0xFF00;
+    *reg  = *reg | (v << 8);
+  }
+}
+
+ui16 getOperandValue(ui16* registers, Operand operand)
+{
+  if (operand.type == IMMEDIATE)
+  {
+    return operand.immediate.size == EIGHT ? operand.immediate.immediate16 : operand.immediate.immediate8;
+  }
+  else if (operand.type == REGISTER)
+  {
+    ui16 regValue = registers[operand.reg.type];
+    if (operand.reg.size == SIXTEEN)
+    {
+      return regValue;
+    }
+    if (operand.reg.offset == 8)
+    {
+      return regValue << 8;
+    }
+    return regValue & 0xFF;
+  }
+
+  return 0;
+}
+
+void executeMoveInstruction(ui16* registers, Operand* operands)
+{
+  if (operands[0].type == REGISTER)
+  {
+    ui16 value     = getOperandValue(registers, operands[1]);
+    ui16 prevValue = registers[operands[0].reg.type];
+    setRegisterValue(&registers[operands[0].reg.type], value, operands[1].immediate.size, operands[0].reg.offset);
+    printf("\t%s\t0x%04x -> 0x%04x\n", registerNames[operands[0].reg.type], prevValue, registers[operands[0].reg.type]);
+  }
+}
+
+void executeInstruction(ui16* registers, Instruction instruction)
+{
+  switch (instruction.op)
+  {
+  case MOV:
+  {
+    executeMoveInstruction(registers, instruction.operands);
+  }
+  }
+}
+
 int main()
 {
   ui8*        buffer;
   ui8*        end;
   int         len;
-  const char* name = "t5";
+  const char* name = "t7";
   read_file(&buffer, &len, name);
 
   end = buffer + len;
@@ -719,6 +789,8 @@ int main()
 
   Instruction instructions[256];
   ui16        current = 0;
+
+  ui16        registers[8];
 
   while (buffer < end)
   {
@@ -887,7 +959,8 @@ int main()
       debugByte(buffer[0]);
       exit(1);
     }
-    debugInstruction(instructions[current]);
+    // debugInstruction(instructions[current]);
+    executeInstruction(registers, instructions[current]);
     current++;
     buffer++;
   }
