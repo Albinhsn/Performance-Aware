@@ -66,24 +66,27 @@ char *registerMemoryEncoding0[] = {"bx + si", "bx + di", "bp + si", "bp + di",
 
 char *registerMemoryEncoding1[] = {"bx + si", "bx + di", "bp + si", "bp + di",
                                    "si",      "di",      "bp",      "bx"};
-
-static inline void advance(ui8 *current, ui8 **buffer) {
-  *current = *buffer[0];
-  (*buffer)++;
+static inline char **getRegisterMemoryEncoding(bool w) {
+  return w ? registerMemoryEncoding1 : registerMemoryEncoding0;
 }
 
-void parseRegMemoryFieldCoding(char *res, ui8 **buffer, ui8 *current, ui8 mod,
-                               bool w, ui8 rm) {
-  char **encoding =
-      mod == 0 ? registerMemoryEncoding0 : registerMemoryEncoding1;
+static inline char **getRegisterRegisterEncoding(bool w) {
+  return w ? registerToRegisterEncoding16 : registerToRegisterEncoding8;
+}
+
+static inline void advance(ui8 **buffer) { (*buffer)++; }
+
+void parseRegMemoryFieldCoding(char *res, ui8 **buffer, ui8 mod, bool w,
+                               ui8 rm) {
+  char **encoding = getRegisterMemoryEncoding(mod == 0);
   switch (mod) {
   case 0: {
     if (rm == 6) {
-      advance(current, buffer);
-      ui16 direct = *current;
+      advance(buffer);
+      ui16 direct = *buffer[0];
       if (w) {
-        advance(current, buffer);
-        direct = (*current << 8) | direct;
+        advance(buffer);
+        direct = (*buffer[0] << 8) | direct;
       }
       sprintf(&res[0], "[%d]", direct);
     } else {
@@ -92,42 +95,41 @@ void parseRegMemoryFieldCoding(char *res, ui8 **buffer, ui8 *current, ui8 mod,
     break;
   }
   case 1: {
-    advance(current, buffer);
-    if (*current != 0) {
-      sprintf(&res[0], "[%s + %d]", encoding[rm], *current);
+    advance(buffer);
+    if (*buffer[0] != 0) {
+      sprintf(&res[0], "[%s + %d]", encoding[rm], *buffer[0]);
     } else {
       sprintf(&res[0], "[%s]", encoding[rm]);
     }
     break;
   }
   case 2: {
-    advance(current, buffer);
-    ui16 direct = *current;
-    advance(current, buffer);
-    direct = (*current << 8) | direct;
+    advance(buffer);
+    ui16 direct = *buffer[0];
+    advance(buffer);
+    direct = (*buffer[0] << 8) | direct;
     sprintf(&res[0], "[%s + %d]", encoding[rm], direct);
     break;
   }
   case 3: {
-    char **enc = w ? registerToRegisterEncoding16 : registerToRegisterEncoding8;
-    sprintf(&res[0], "%s", enc[rm]);
+    sprintf(&res[0], "%s", getRegisterRegisterEncoding(w)[rm]);
     break;
   }
   }
 }
 
-static void parseImmediateToRegMemory(ui8 **buffer, ui8 *current, ui8 mod,
-                                      ui8 rm, bool w, bool s, bool mov) {
+static void parseImmediateToRegMemory(ui8 **buffer, ui8 mod, ui8 rm, bool w,
+                                      bool s, bool mov) {
 
   char res[32];
   char source[32];
-  parseRegMemoryFieldCoding(&res[0], buffer, current, mod, w, rm);
+  parseRegMemoryFieldCoding(&res[0], buffer, mod, w, rm);
 
-  advance(current, buffer);
-  ui16 offset = *current;
+  advance(buffer);
+  ui16 offset = *buffer[0];
   if (!s && w) {
-    advance(current, buffer);
-    offset = (*current << 8) | offset;
+    advance(buffer);
+    offset = (*buffer[0] << 8) | offset;
     sprintf(&source[0], mov ? "word %d" : "%d", offset);
   } else {
     sprintf(&source[0], mov ? "byte %d" : "%d", offset);
@@ -135,85 +137,74 @@ static void parseImmediateToRegMemory(ui8 **buffer, ui8 *current, ui8 mod,
 
   printf(" %s, %s\n", res, source);
 }
-static void parseImmediateToReg(ui8 **buffer, ui8 *current, ui8 immediate,
-                                ui8 reg, bool w) {
+static void parseImmediateToReg(ui8 **buffer, ui8 immediate, ui8 reg, bool w) {
   if (w) {
-    advance(current, buffer);
-    ui16 immediate16 = (*current << 8) | immediate;
+    advance(buffer);
+    ui16 immediate16 = (*buffer[0] << 8) | immediate;
     printf("mov %s, %d\n", registerToRegisterEncoding16[reg], immediate16);
   } else {
     printf("mov %s, %d\n", registerToRegisterEncoding8[reg], immediate);
   }
 }
-static void parseRegMemory(ui8 **buffer, ui8 *current, char *instruction) {
+static void parseRegMemory(ui8 **buffer, char *instruction) {
 
-  bool d = ((*current >> 1) & 1);
-  bool w = (*current & 1);
+  bool d = ((*buffer[0] >> 1) & 1);
+  bool w = (*buffer[0] & 1);
 
-  advance(current, buffer);
-  ui8 mod = (*current >> 6) & 0b11;
-  ui8 reg = (*current >> 3) & 0b111;
-  ui8 rm = *current & 0b111;
+  advance(buffer);
+  ui8 mod = (*buffer[0] >> 6) & 0b11;
+  ui8 reg = (*buffer[0] >> 3) & 0b111;
+  ui8 rm = *buffer[0] & 0b111;
 
-  char **encoding =
-      w ? registerToRegisterEncoding16 : registerToRegisterEncoding8;
+  char **encoding = getRegisterRegisterEncoding(w);
   char res[32];
-  parseRegMemoryFieldCoding(&res[0], buffer, current, mod, w, rm);
+  parseRegMemoryFieldCoding(&res[0], buffer, mod, w, rm);
   printf("%s %s, %s\n", instruction, d ? encoding[reg] : res,
          d ? res : encoding[reg]);
 }
 
 static void parseAccumulatorToMemory(ui8 **buffer, ui8 *current) {}
 
-void parseRegRegFieldEncoding(char *res, bool w, ui8 rm) {
-  char *enc =
-      w ? registerToRegisterEncoding16[rm] : registerToRegisterEncoding8[rm];
-  strcpy(&res[0], enc);
+static inline void parseRegRegFieldEncoding(char *res, bool w, ui8 rm) {
+  strcpy(&res[0], getRegisterRegisterEncoding(w)[w]);
 }
 
 static inline bool matchRegMemoryMove(ui8 current) {
   return (current >> 2 & 0b111111) == 0b100010;
 }
-static void parseImmediateToRegMove(ui8 **buffer, ui8 *current) {
-  bool w = (*current >> 3 & 1);
-  ui8 reg = (*current & 0b111);
+static void parseImmediateToRegMove(ui8 **buffer) {
+  bool w = (*buffer[0] >> 3 & 1);
+  ui8 reg = (*buffer[0] & 0b111);
 
-  advance(current, buffer);
-  ui8 immediate = *current;
+  advance(buffer);
+  ui8 immediate = *buffer[0];
 
   printf("mov ");
-  parseImmediateToReg(buffer, current, immediate, reg, w);
+  parseImmediateToReg(buffer, immediate, reg, w);
 }
 
-static void parseImmediateToAccumulator(ui8 **buffer, ui8 *current,
-                                        char *instruction) {
-#if DEBUG
-  printf("ADD Immediate to accumulator\n\t");
-#endif
+static void parseImmediateToAccumulator(ui8 **buffer, char *instruction) {
 
-  bool w = *current & 1;
+  bool w = *buffer[0] & 1;
 
-  advance(current, buffer);
-  ui16 imm = *current;
+  advance(buffer);
+  ui16 imm = *buffer[0];
   if (w) {
-    advance(current, buffer);
-    imm = (*current << 8) | imm;
+    advance(buffer);
+    imm = (*buffer[0] << 8) | imm;
   }
 
   printf("%s ax, %d\n", instruction, imm);
 }
 
-static void parseImmediateToRegMemoryAddSubCmp(ui8 **buffer, ui8 *current) {
-#if DEBUG
-  printf("ADD Immediate to register/memory\n\t");
-#endif
-  bool s = ((*current >> 1) & 1);
-  bool w = (*current & 1);
-  advance(current, buffer);
+static void parseImmediateToRegMemoryAddSubCmp(ui8 **buffer) {
+  bool s = ((*buffer[0] >> 1) & 1);
+  bool w = (*buffer[0] & 1);
+  advance(buffer);
 
-  ui8 mod = (*current >> 6) & 0b11;
-  ui8 reg = (*current >> 3) & 0b111;
-  ui8 rm = *current & 0b111;
+  ui8 mod = (*buffer[0] >> 6) & 0b11;
+  ui8 reg = (*buffer[0] >> 3) & 0b111;
+  ui8 rm = *buffer[0] & 0b111;
 
   if (reg == 0b101) {
     printf("sub");
@@ -222,15 +213,15 @@ static void parseImmediateToRegMemoryAddSubCmp(ui8 **buffer, ui8 *current) {
   } else {
     printf("add");
   }
-  parseImmediateToRegMemory(buffer, current, mod, rm, w, s, false);
+  parseImmediateToRegMemory(buffer, mod, rm, w, s, false);
 }
-static void parseAccumulatorToMemoryMov(ui8 **buffer, ui8 *current, bool mta) {
+static void parseAccumulatorToMemoryMov(ui8 **buffer, bool mta) {
 
-  bool w = *current & 0b1;
-  advance(current, buffer);
-  ui16 offset = *current;
-  advance(current, buffer);
-  offset = (*current << 8) | offset;
+  bool w = *buffer[0] & 0b1;
+  advance(buffer);
+  ui16 offset = *buffer[0];
+  advance(buffer);
+  offset = (*buffer[0] << 8) | offset;
   if (!mta) {
     printf("mov [%d], ax\n", offset);
   } else {
@@ -238,19 +229,21 @@ static void parseAccumulatorToMemoryMov(ui8 **buffer, ui8 *current, bool mta) {
   }
 }
 
-static void parseImmediateToRegMemoryMove(ui8 **buffer, ui8 *current) {
+static void parseImmediateToRegMemoryMove(ui8 **buffer) {
 
-  bool w = *current & 0b1;
-  advance(current, buffer);
-  ui8 mod = (*current >> 6) & 0b11;
-  ui8 rm = *current & 0b111;
+  bool w = *buffer[0] & 0b1;
+  advance(buffer);
+  ui8 mod = (*buffer[0] >> 6) & 0b11;
+  ui8 rm = *buffer[0] & 0b111;
 
-  parseImmediateToRegMemory(buffer, current, mod, rm, w, 0, true);
+  printf("mov");
+
+  parseImmediateToRegMemory(buffer, mod, rm, w, 0, true);
 }
 
-static void parseJump(ui8 **buffer, ui8 *current, char *instruction) {
-  advance(current, buffer);
-  printf("%s %d\n", instruction, *current);
+static void parseJump(ui8 **buffer, char *instruction) {
+  advance(buffer);
+  printf("%s %d\n", instruction, *buffer[0]);
 }
 static inline bool matchImmediateToRegMemoryMove(ui8 current) {
   return ((current >> 1) & 0b1111111) == 0b1100011;
@@ -320,9 +313,8 @@ static inline bool matchJCXZ(ui8 current) { return current == 0b11100011; }
 int main() {
   ui8 *buffer;
   ui8 *end;
-  ui8 current;
   int len;
-  const char *name = "t5_test";
+  const char *name = "t1";
   read_file(&buffer, &len, name);
 
   end = buffer + len;
@@ -333,106 +325,107 @@ int main() {
   char dest[32];
 
   while (buffer < end) {
-    advance(&current, &buffer);
-    if (matchRegMemoryAdd(current)) {
-      parseRegMemory(&buffer, &current, "add");
+    if (matchRegMemoryAdd(buffer[0])) {
+      parseRegMemory(&buffer, "add");
 
-    } else if (matchRegMemoryCmp(current)) {
-      parseRegMemory(&buffer, &current, "cmp");
+    } else if (matchRegMemoryCmp(buffer[0])) {
+      parseRegMemory(&buffer, "cmp");
 
-    } else if (matchRegMemorySub(current)) {
-      parseRegMemory(&buffer, &current, "sub");
+    } else if (matchRegMemorySub(buffer[0])) {
+      parseRegMemory(&buffer, "sub");
 
-    } else if (matchImmediateToRegMemory(current)) {
-      parseImmediateToRegMemoryAddSubCmp(&buffer, &current);
+    } else if (matchImmediateToRegMemory(buffer[0])) {
+      parseImmediateToRegMemoryAddSubCmp(&buffer);
 
-    } else if (matchImmediateToAccumulatorCmp(current)) {
-      parseImmediateToAccumulator(&buffer, &current, "cmp");
+    } else if (matchImmediateToAccumulatorCmp(buffer[0])) {
+      parseImmediateToAccumulator(&buffer, "cmp");
 
-    } else if (matchImmediateToAccumulatorSub(current)) {
-      parseImmediateToAccumulator(&buffer, &current, "sub");
+    } else if (matchImmediateToAccumulatorSub(buffer[0])) {
+      parseImmediateToAccumulator(&buffer, "sub");
 
-    } else if (matchImmediateToAccumulatorAdd(current)) {
-      parseImmediateToAccumulator(&buffer, &current, "add");
+    } else if (matchImmediateToAccumulatorAdd(buffer[0])) {
+      parseImmediateToAccumulator(&buffer, "add");
 
-    } else if (matchImmediateToRegMove(current)) {
-      parseImmediateToRegMove(&buffer, &current);
+    } else if (matchImmediateToRegMove(buffer[0])) {
+      parseImmediateToRegMove(&buffer);
 
-    } else if (matchAccumulatorToMemoryMov(current)) {
-      parseAccumulatorToMemoryMov(&buffer, &current, false);
+    } else if (matchAccumulatorToMemoryMov(buffer[0])) {
+      parseAccumulatorToMemoryMov(&buffer, false);
 
-    } else if (matchMemoryToAccumulatorMov(current)) {
-      parseAccumulatorToMemoryMov(&buffer, &current, true);
+    } else if (matchMemoryToAccumulatorMov(buffer[0])) {
+      parseAccumulatorToMemoryMov(&buffer, true);
 
-    } else if (matchImmediateToRegMemoryMove(current)) {
-      parseImmediateToRegMemoryMove(&buffer, &current);
+    } else if (matchImmediateToRegMemoryMove(buffer[0])) {
+      parseImmediateToRegMemoryMove(&buffer);
 
-    } else if (matchRegMemoryMove(current)) {
-      parseRegMemory(&buffer, &current, "mov");
+    } else if (matchRegMemoryMove(buffer[0])) {
+      parseRegMemory(&buffer, "mov");
 
-    } else if (matchJE(current)) {
-      parseJump(&buffer, &current, "je");
+    } else if (matchJE(buffer[0])) {
+      parseJump(&buffer, "je");
 
-    } else if (matchJL(current)) {
-      parseJump(&buffer, &current, "jl");
+    } else if (matchJL(buffer[0])) {
+      parseJump(&buffer, "jl");
 
-    } else if (matchJLE(current)) {
-      parseJump(&buffer, &current, "jle");
+    } else if (matchJLE(buffer[0])) {
+      parseJump(&buffer, "jle");
 
-    } else if (matchJB(current)) {
-      parseJump(&buffer, &current, "jb");
+    } else if (matchJB(buffer[0])) {
+      parseJump(&buffer, "jb");
 
-    } else if (matchJBE(current)) {
-      parseJump(&buffer, &current, "jbe");
+    } else if (matchJBE(buffer[0])) {
+      parseJump(&buffer, "jbe");
 
-    } else if (matchJP(current)) {
-      parseJump(&buffer, &current, "jp");
+    } else if (matchJP(buffer[0])) {
+      parseJump(&buffer, "jp");
 
-    } else if (matchJO(current)) {
-      parseJump(&buffer, &current, "jo");
+    } else if (matchJO(buffer[0])) {
+      parseJump(&buffer, "jo");
 
-    } else if (matchJS(current)) {
-      parseJump(&buffer, &current, "js");
+    } else if (matchJS(buffer[0])) {
+      parseJump(&buffer, "js");
 
-    } else if (matchJNE(current)) {
-      parseJump(&buffer, &current, "jne");
+    } else if (matchJNE(buffer[0])) {
+      parseJump(&buffer, "jne");
 
-    } else if (matchJNL(current)) {
-      parseJump(&buffer, &current, "jnl");
+    } else if (matchJNL(buffer[0])) {
+      parseJump(&buffer, "jnl");
 
-    } else if (matchJNLE(current)) {
-      parseJump(&buffer, &current, "jnle");
+    } else if (matchJNLE(buffer[0])) {
+      parseJump(&buffer, "jnle");
 
-    } else if (matchJNB(current)) {
-      parseJump(&buffer, &current, "jnb");
+    } else if (matchJNB(buffer[0])) {
+      parseJump(&buffer, "jnb");
 
-    } else if (matchJNBE(current)) {
-      parseJump(&buffer, &current, "jnbe");
+    } else if (matchJNBE(buffer[0])) {
+      parseJump(&buffer, "jnbe");
 
-    } else if (matchJNP(current)) {
-      parseJump(&buffer, &current, "jp");
+    } else if (matchJNP(buffer[0])) {
+      parseJump(&buffer, "jp");
 
-    } else if (matchJNO(current)) {
-      parseJump(&buffer, &current, "jno");
+    } else if (matchJNO(buffer[0])) {
+      parseJump(&buffer, "jno");
 
-    } else if (matchJNS(current)) {
-      parseJump(&buffer, &current, "jns");
+    } else if (matchJNS(buffer[0])) {
+      parseJump(&buffer, "jns");
 
-    } else if (matchLoop(current)) {
-      parseJump(&buffer, &current, "loop");
+    } else if (matchLoop(buffer[0])) {
+      parseJump(&buffer, "loop");
 
-    } else if (matchLoopz(current)) {
-      parseJump(&buffer, &current, "loopz");
+    } else if (matchLoopz(buffer[0])) {
+      parseJump(&buffer, "loopz");
 
-    } else if (matchLoopnz(current)) {
-      parseJump(&buffer, &current, "loopnz");
+    } else if (matchLoopnz(buffer[0])) {
+      parseJump(&buffer, "loopnz");
 
-    } else if (matchJCXZ(current)) {
-      parseJump(&buffer, &current, "jcxz");
+    } else if (matchJCXZ(buffer[0])) {
+      parseJump(&buffer, "jcxz");
 
     } else {
       printf("UNKNOWN INSTRUCTION ");
-      debugByte(current);
+      debugByte(buffer[0]);
+      exit(1);
     }
+    buffer++;
   }
 }
