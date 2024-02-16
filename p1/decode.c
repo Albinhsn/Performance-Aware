@@ -419,28 +419,22 @@ static void parseImmediateToRegMemory(Operand* operands, ui8** buffer, ui8 mod, 
     operands[1].immediate.immediate8 = offset;
     sprintf(&source[0], mov ? "byte %d" : "%d", offset);
   }
-
-  // printf(" %s, %s\n", res, source);
 }
 static void parseImmediateToReg(Operand* operands, ui8** buffer, ui8 immediate, ui8 reg, bool w)
 {
   operands[0].type = REGISTER;
   parseRegister(&operands[0].reg, reg, w);
+  operands[1].type = IMMEDIATE;
   if (w)
   {
     advance(buffer);
-    ui16 immediate16 = (*buffer[0] << 8) | immediate;
-    // printf("mov %s, %d\n", registerToRegisterEncoding16[reg], immediate16);
+    ui16 immediate16                  = (*buffer[0] << 8) | immediate;
 
-    operands[1].type                  = IMMEDIATE;
     operands[1].immediate.size        = SIXTEEN;
     operands[1].immediate.immediate16 = immediate16;
   }
   else
   {
-    // printf("mov %s, %d\n", registerToRegisterEncoding8[reg], immediate);
-
-    operands[1].type                 = IMMEDIATE;
     operands[1].immediate.size       = EIGHT;
     operands[1].immediate.immediate8 = immediate;
   }
@@ -463,8 +457,6 @@ static void parseRegMemory(Operand* operands, ui8** buffer, char* instruction)
   bool nd           = !d;
   operands[nd].type = REGISTER;
   parseRegister(&operands[nd].reg, reg, w);
-
-  // printf("%s %s, %s\n", instruction, d ? encoding[reg] : res, d ? res : encoding[reg]);
 }
 
 static void parseImmediateToRegMove(Operand* operands, ui8** buffer)
@@ -475,7 +467,6 @@ static void parseImmediateToRegMove(Operand* operands, ui8** buffer)
   advance(buffer);
   ui8 immediate = *buffer[0];
 
-  // printf("mov ");
   parseImmediateToReg(operands, buffer, immediate, reg, w);
 }
 
@@ -501,8 +492,6 @@ static void parseImmediateToAccumulator(Operand* operands, ui8** buffer, char* i
     operands[1].immediate.size       = EIGHT;
     operands[1].immediate.immediate8 = imm;
   }
-
-  // printf("%s ax, %d\n", instruction, imm);
 }
 
 static void parseImmediateToRegMemoryAddSubCmp(Instruction* instruction, ui8** buffer)
@@ -518,17 +507,14 @@ static void parseImmediateToRegMemoryAddSubCmp(Instruction* instruction, ui8** b
   if (reg == 0b101)
   {
     instruction->op = SUB;
-    // printf("sub");
   }
   else if (reg == 0b111)
   {
     instruction->op = CMP;
-    // printf("cmp");
   }
   else
   {
     instruction->op = ADD;
-    // printf("add");
   }
   parseImmediateToRegMemory(&instruction->operands[0], buffer, mod, rm, w, s, false);
 }
@@ -548,7 +534,6 @@ static void parseAccumulatorToMemoryMov(Operand* operands, ui8** buffer, bool mt
     operands[1].effectiveAddress.rm                    = 6;
     operands[1].effectiveAddress.immediate.size        = SIXTEEN;
     operands[1].effectiveAddress.immediate.immediate16 = offset;
-    // printf("mov ax, [%d]\n", offset);
   }
   else
   {
@@ -558,7 +543,6 @@ static void parseAccumulatorToMemoryMov(Operand* operands, ui8** buffer, bool mt
     operands[0].effectiveAddress.rm                    = 6;
     operands[0].effectiveAddress.immediate.size        = SIXTEEN;
     operands[0].effectiveAddress.immediate.immediate16 = offset;
-    // printf("mov [%d], ax\n", offset);
   }
 }
 
@@ -570,8 +554,6 @@ static void parseImmediateToRegMemoryMove(Operand* operands, ui8** buffer)
   ui8 mod = (*buffer[0] >> 6) & 0b11;
   ui8 rm  = *buffer[0] & 0b111;
 
-  // printf("mov");
-
   parseImmediateToRegMemory(operands, buffer, mod, rm, w, 0, true);
 }
 
@@ -581,8 +563,6 @@ static void parseJump(Operand* operands, ui8** buffer, char* instruction)
   operands[0].type                 = IMMEDIATE;
   operands[0].immediate.size       = EIGHT;
   operands[0].immediate.immediate8 = *buffer[0];
-
-  // printf("%s %d\n", instruction, *buffer[0]);
 }
 
 static inline bool matchImmediateToRegMemoryMove(ui8 current)
