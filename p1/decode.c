@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define DEBUG true
+
 typedef uint8_t ui8;
 typedef uint16_t ui16;
 typedef uint32_t ui32;
@@ -69,172 +71,262 @@ static inline void advance(ui8 *current, ui8 **buffer) {
   *current = *buffer[0];
   (*buffer)++;
 }
+static void parseImmediateToRegMemory(ui8 **buffer, ui8 *current) {}
+static void parseImmediateToReg(ui8 **buffer, ui8 *current) {}
+static void parseRegMemoryAdd(ui8 **buffer, ui8 *current);
+static void parseAccumulatorToMemory(ui8 **buffer, ui8 *current) {}
 
-#define ADVANCE(len, buffer)                                                   \
-  len++;                                                                       \
-  buffer++
+void parseRegRegFieldEncoding(char *res, bool w, ui8 rm) {
+  char *enc =
+      w ? registerToRegisterEncoding16[rm] : registerToRegisterEncoding8[rm];
+  strcpy(&res[0], enc);
+}
+
+void parseRegMemoryFieldCoding(char *res, ui8 **buffer, ui8 *current, ui8 mod,
+                               bool w, ui8 rm) {
+  char **encoding = w ? registerMemoryEncoding1 : registerMemoryEncoding0;
+  switch (mod) {
+  case 0: {
+    if (rm == 6) {
+      ui16 direct = *current;
+      if (w) {
+        advance(current, buffer);
+        direct = (*current << 8) | direct;
+      }
+      sprintf(&res[0], "%d", direct);
+    } else {
+      sprintf(&res[0], "[%s]", encoding[rm]);
+    }
+    break;
+  }
+  case 1: {
+    advance(current, buffer);
+    if (*current != 0) {
+      sprintf(&res[0], "[%s + %d]", encoding[rm], *current);
+    } else {
+      sprintf(&res[0], "[%s]", encoding[rm]);
+    }
+    break;
+  }
+  case 2: {
+    ui16 direct = *current;
+    advance(current, buffer);
+    direct = (*current << 8) | direct;
+    sprintf(&res[0], "[%s + %d]", encoding[rm], direct);
+    break;
+  }
+  case 3: {
+    sprintf(&res[0], "%s", encoding[rm]);
+    break;
+  }
+  }
+}
+
+static inline bool matchRegMemoryMove(ui8 current) {
+  return (current >> 2 & 0b111111) == 0b100010;
+}
+static void parseImmediateToRegMove(ui8 **buffer, ui8 *current) {
+  bool w = (*current >> 3 & 1);
+  ui8 reg = (*current & 0b111);
+
+  advance(current, buffer);
+  ui8 immediate = *current;
+
+  if (w) {
+    advance(current, buffer);
+    ui16 immediate16 = (*current << 8) | immediate;
+    printf("mov %s, %d\n", registerToRegisterEncoding16[reg], immediate16);
+  } else {
+    printf("mov %s, %d\n", registerToRegisterEncoding8[reg], immediate);
+  }
+}
+
+static void parseImmediateToRegMemoryAdd(ui8 **buffer, ui8 *current) {
+#if DEBUG
+  printf("ADD Immediate to register/memory\n\t");
+#endif
+  bool s = ((*current >> 1) & 1);
+  bool w = (*current & 1);
+  advance(current, buffer);
+
+  ui8 mod = (*current >> 6) & 0b11;
+  ui8 rm = *current & 0b111;
+  advance(current, buffer);
+
+  char **encoding =
+      w ? registerToRegisterEncoding16 : registerToRegisterEncoding8;
+  printf("add %s, ", encoding[rm]);
+  ui16 offset = *current;
+}
+static void parseAccumulatorToMemoryMov(ui8 **buffer, ui8 *current) {
+#if DEBUG
+  printf("Accumulator to memory mov\n\t");
+#endif
+  char source[32];
+  memset(&source, 0, 16);
+  char dest[32];
+  memset(&dest, 0, 16);
+
+  bool w = *current & 0b1;
+  advance(current, buffer);
+  ui16 offset = *current;
+  advance(current, buffer);
+  offset = (*current << 8) | offset;
+  if (w) {
+    printf("mov [%d], ax\n", offset);
+  } else {
+    printf("mov ax, [%d]\n", offset);
+  }
+}
+
+static void parseImmediateToRegMemoryMove(ui8 **buffer, ui8 *current) {
+#if DEBUG
+  printf("Accumulator to memory mov\n\t");
+#endif
+  char source[32];
+  char dest[32];
+
+  memset(&source, 0, 32);
+  memset(&dest, 0, 32);
+
+  bool w = *current & 0b1;
+  advance(current, buffer);
+  ui8 mod = (*current >> 6) & 0b11;
+  ui8 rm = *current & 0b111;
+  char res[32];
+  parseRegMemoryFieldCoding(&res[0], buffer, current, mod, w, rm);
+
+  advance(current, buffer);
+  ui16 offset = *current;
+  if (w) {
+    advance(current, buffer);
+    offset = (*current << 8) | offset;
+    sprintf(&source[0], "word %d", offset);
+  } else {
+    sprintf(&source[0], "byte %d", offset);
+  }
+
+  printf("mov %s, %s\n", dest, source);
+}
+static void parseRegMemoryAdd(ui8 **buffer, ui8 *current) {
+#if DEBUG
+  printf("ADD Reg/memory with register to either\n\t");
+#endif
+  bool d = ((*current >> 1) & 1);
+  bool w = (*current & 1);
+
+  advance(current, buffer);
+  ui8 mod = (*current >> 6) & 0b11;
+  ui8 reg = (*current >> 3) & 0b111;
+  ui8 rm = *current & 0b111;
+
+  char **encoding =
+      w ? registerToRegisterEncoding16 : registerToRegisterEncoding8;
+  char res[32];
+  parseRegMemoryFieldCoding(&res[0], buffer, current, mod, w, rm);
+  printf("add %s, %s\n", encoding[reg], res);
+}
+
+static void parseRegMemoryMove(ui8 **buffer, ui8 *current) {
+#if DEBUG
+  printf("Reg Memory Move\n\t");
+#endif
+  char source[32];
+  char dest[32];
+  memset(&source, 0, 32);
+  memset(&dest, 0, 32);
+
+  bool d = ((*current >> 1) & 1);
+  bool w = (*current & 1);
+
+  advance(current, buffer);
+  ui8 mod = (*current >> 6) & 0b11;
+  ui8 reg = (*current >> 3) & 0b111;
+  ui8 rm = *current & 0b111;
+
+  if (mod == 0b11) {
+    ui8 fst = d ? reg : rm;
+    ui8 snd = d ? rm : reg;
+    parseRegRegFieldEncoding(&dest[0], w, fst);
+    parseRegRegFieldEncoding(&source[0], w, snd);
+  } else {
+
+    char **encoding =
+        w ? registerToRegisterEncoding16 : registerToRegisterEncoding8;
+
+    advance(current, buffer);
+    ui16 offset = *current;
+
+    if (mod == 0b10) {
+      advance(current, buffer);
+      offset = (*current << 8) | offset;
+    }
+
+    strcpy(d ? &dest[0] : &source[0], encoding[reg]);
+    char *location = registerMemoryEncoding1[rm];
+    if (offset != 0) {
+      sprintf(d ? &source[0] : &dest[0], "[%s + %d]", location, offset);
+    } else {
+      sprintf(d ? &source[0] : &dest[0], "[%s]", location);
+    }
+  }
+
+  printf("mov %s, %s\n", dest, source);
+}
+static inline bool matchImmediateToRegMemoryMove(ui8 current) {
+  return ((current >> 1) & 0b1111111) == 0b1100011;
+}
+
+static inline bool matchImmediateToRegMove(ui8 current) {
+  return ((current >> 4) & 0b1111) == 0b1011;
+}
+
+static inline bool matchImmediateToAccumulatorAdd(ui8 current) {
+  return ((current >> 1) & 0b1111111) == 0b0000010;
+}
+
+static inline bool matchAccumulatorToMemoryMov(ui8 current) {
+  return ((current >> 1) & 0b1111111) == 0b1010001;
+}
+
+static inline bool matchRegMemoryAdd(ui8 current) {
+  return ((current >> 2) & 0b111111) == 0;
+}
+
+static inline bool matchImmediateToRegMemoryAdd(ui8 current) {
+  return ((current >> 2) & 0b111111) == 0b100000;
+}
 
 int main() {
   ui8 *buffer;
   ui8 *end;
   ui8 current;
   int len;
-  const char *name = "t4";
+  const char *name = "t3";
   read_file(&buffer, &len, name);
 
   end = buffer + len;
   printf("; %s.asm\n", name);
   printf("bits 16\n\n");
 
+  char source[32];
+  char dest[32];
+
   while (buffer < end) {
     advance(&current, &buffer);
-    if (((current >> 4) & 0b1111) == 0b1011) {
-      bool w = (current >> 3 & 1);
-      ui8 reg = (current & 0b111);
-
-      advance(&current, &buffer);
-      ui8 immediate = current;
-
-      if (w) {
-        advance(&current, &buffer);
-        ui16 immediate16 = (current << 8) | immediate;
-        printf("mov %s, %d\n", registerToRegisterEncoding16[reg], immediate16);
-      } else {
-        printf("mov %s, %d\n", registerToRegisterEncoding8[reg], immediate);
-      }
-
-    } else if (((current >> 1) & 0b1111111) == 0b1010001) {
-
-      char source[32];
-      memset(&source, 0, 16);
-      char dest[32];
-      memset(&dest, 0, 16);
-
-      bool w = current & 0b1;
-      advance(&current, &buffer);
-      ui16 offset = current;
-      advance(&current, &buffer);
-      offset = (current << 8) | offset;
-      if(w){
-        printf("mov [%d], ax\n", offset);
-      }else{
-        printf("mov ax, [%d]\n", offset);
-      }
-
-    } else if (((current >> 1) & 0b1111111) == 0b1100011) {
-      char source[32];
-      memset(&source, 0, 16);
-      char dest[32];
-      memset(&dest, 0, 16);
-
-      bool w = current & 0b1;
-      advance(&current, &buffer);
-      ui8 mod = (current >> 6) & 0b11;
-      ui8 rm = current & 0b111;
-      advance(&current, &buffer);
-
-      if (mod == 0b00) {
-        sprintf(&dest[0], "[%s]", registerMemoryEncoding0[rm]);
-      } else if (mod == 0b10) {
-        ui16 offset = current;
-        advance(&current, &buffer);
-        offset = (current << 8) | offset;
-        advance(&current, &buffer);
-
-        sprintf(&dest[0], "[%s + %d]", registerMemoryEncoding0[rm], offset);
-      } else if (mod == 0b01) {
-        ui8 offset = current;
-        advance(&current, &buffer);
-        sprintf(&dest[0], "[%s + %d]", registerMemoryEncoding0[rm], offset);
-      } else {
-        printf("HUH\n");
-      }
-
-      ui16 offset = current;
-      if (w) {
-        advance(&current, &buffer);
-        offset = (current << 8) | offset;
-        sprintf(&source[0], "word %d", offset);
-      } else {
-        sprintf(&source[0], "byte %d", offset);
-      }
-
-      char **encoding =
-          w ? registerToRegisterEncoding16 : registerToRegisterEncoding8;
-
-      printf("mov %s, %s\n", dest, source);
-
-    } else if ((current >> 2 & 0b111111) == 0b100010) {
-      bool d = ((current >> 1) & 1);
-      bool w = (current & 1);
-
-      advance(&current, &buffer);
-
-      ui8 mod = (current >> 6) & 0b11;
-      ui8 reg = (current >> 3) & 0b111;
-      ui8 rm = current & 0b111;
-
-      char source[32];
-      memset(&source, 0, 16);
-      char dest[32];
-      memset(&dest, 0, 16);
-
-      char **encoding =
-          w ? registerToRegisterEncoding16 : registerToRegisterEncoding8;
-
-      if (mod == 0b00) {
-        if (!d) {
-          strcpy(&source[0], encoding[reg]);
-          sprintf(&dest[0], "[%s]", registerMemoryEncoding0[rm]);
-        } else {
-          if (rm == 0b110) {
-            advance(&current, &buffer);
-            ui16 offset = current;
-            if (w) {
-              advance(&current, &buffer);
-              offset = (current << 8) | offset;
-            }
-            sprintf(&source[0], "[%d]", offset);
-            strcpy(&dest[0], encoding[reg]);
-          } else {
-            strcpy(&dest[0], encoding[reg]);
-            sprintf(&source[0], "[%s]", registerMemoryEncoding0[rm]);
-          }
-        }
-
-      } else if (mod == 0b11) {
-        strcpy(&dest[0], encoding[d ? reg : rm]);
-        strcpy(&source[0], encoding[d ? rm : reg]);
-      } else {
-
-        advance(&current, &buffer);
-        ui16 offset = current;
-
-        if (mod == 0b10) {
-          advance(&current, &buffer);
-          offset = (current << 8) | offset;
-        }
-
-        char *location = registerMemoryEncoding1[rm];
-        if (!d) {
-          strcpy(&source[0], encoding[reg]);
-          if (offset != 0) {
-            sprintf(&dest[0], "[%s + %d]", location, offset);
-          } else {
-            sprintf(&dest[0], "[%s]", location);
-          }
-
-        } else {
-          strcpy(&dest[0], encoding[reg]);
-          if (offset != 0) {
-            sprintf(&source[0], "[%s + %d]", location, offset);
-          } else {
-            sprintf(&source[0], "[%s]", location);
-          }
-        }
-      }
-
-      printf("mov %s, %s\n", dest, source);
+    if (matchRegMemoryAdd(current)) {
+      parseRegMemoryAdd(&buffer, &current);
+    } else if (matchImmediateToRegMemoryAdd(current)) {
+      parseImmediateToRegMemoryAdd(&buffer, &current);
+    } else if (matchImmediateToAccumulatorAdd(current)) {
+    } else if (matchImmediateToRegMove(current)) {
+      parseImmediateToRegMove(&buffer, &current);
+    } else if (matchAccumulatorToMemoryMov(current)) {
+      parseAccumulatorToMemoryMov(&buffer, &current);
+    } else if (matchImmediateToRegMemoryMove(current)) {
+      parseImmediateToRegMemoryMove(&buffer, &current);
+    } else if (matchRegMemoryMove(current)) {
+      parseRegMemoryMove(&buffer, &current);
     } else {
       // printf("UNKNOWN INSTRUCTION ");
       // debugByte(current);
