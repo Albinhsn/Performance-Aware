@@ -22,16 +22,27 @@ char*            registerToRegisterEncoding8[]  = {"al", "cl", "dl", "bl", "ah",
 char*            registerMemoryEncoding0[]      = {"bx + si", "bx + di", "bp + si", "bp + di", "si", "di", "", "bx"};
 char*            registerMemoryEncoding1[]      = {"bx + si", "bx + di", "bp + si", "bp + di", "si", "di", "bp", "bx"};
 
-#define CF           0
-#define PF           1
-#define AF           2
-#define ZF           3
-#define SF           4
-#define GETZF(flags) ((flags >> (ZF - 1)) & 0b1)
-#define GETSF(flags) ((flags >> (SF - 1)) & 0b1)
+#define CF                         0
+#define PF                         1
+#define AF                         2
+#define ZF                         3
+#define SF                         4
+#define GETZF(flags)               ((flags >> (ZF - 1)) & 0b1)
+#define GETSF(flags)               ((flags >> (SF - 1)) & 0b1)
 
-#define SETZF(flags) (flags = flags | 0b100)
-#define SETSF(flags) (flags = flags | 0b1000)
+#define SETZF(flags)               (flags = flags | 0b100)
+#define SETSF(flags)               (flags = flags | 0b1000)
+
+#define GET_AX(cpu)                (cpu->registers[0])
+#define GET_CX(cpu)                (cpu->registers[1])
+#define GET_DX(cpu)                (cpu->registers[2])
+#define GET_BX(cpu)                (cpu->registers[3])
+#define GET_SX(cpu)                (cpu->registers[4])
+#define GET_BP(cpu)                (cpu->registers[5])
+#define GET_SI(cpu)                (cpu->registers[6])
+#define GET_DI(cpu)                (cpu->registers[7])
+
+#define IMMEDIATE_VALUE(immediate) (immediate.size == EIGHT ? immediate.immediate8 : immediate.immediate16)
 
 enum Operation
 {
@@ -175,6 +186,7 @@ struct CPU
   Instruction instruction;
   ui8*        start;
   ui8*        prev;
+  ui8         memory[1024 * 1024];
 };
 typedef struct CPU CPU;
 
@@ -812,44 +824,138 @@ void setRegisterValue(CPU* cpu, Register* reg, ui16 value)
   }
 }
 
-ui16 getOperandValue(ui16* registers, Operand operand)
+static inline ui16 calculateEffectiveAddress(CPU* cpu, ui8 rm)
 {
+  switch (rm)
+  {
+  case 0:
+  {
+    return GET_BX(cpu) + GET_SI(cpu);
+  }
+  case 1:
+  {
+    return GET_BX(cpu) + GET_DI(cpu);
+  }
+  case 2:
+  {
+    return GET_BP(cpu) + GET_SI(cpu);
+  }
+  case 3:
+  {
+    return GET_BP(cpu) + GET_DI(cpu);
+  }
+  case 4:
+  {
+    return GET_SI(cpu);
+  }
+  case 5:
+  {
+    return GET_DI(cpu);
+  }
+  case 6:
+  {
+    return GET_BP(cpu);
+  }
+  case 7:
+  {
+    return GET_BX(cpu);
+  }
+  default:
+  {
+    printf("HUH\n");
+    exit(1);
+  }
+  }
+}
+
+static ui16 getEffectiveAddress(CPU* cpu, EffectiveAddress effectiveAddress)
+{
+  if (effectiveAddress.mod == 0 && effectiveAddress.rm == 6)
+  {
+    return IMMEDIATE_VALUE(effectiveAddress.immediate);
+  }
+  ui16 effective = calculateEffectiveAddress(cpu, effectiveAddress.rm);
+  if (effectiveAddress.mod == 0)
+  {
+    return effective;
+  }
+  if (effectiveAddress.mod == 1)
+  {
+    return effective + effectiveAddress.immediate.immediate8;
+  }
+
+  return effective + effectiveAddress.immediate.immediate16;
+}
+
+Immediate getOperandValue(CPU* cpu, Operand operand)
+{
+  Immediate immediate;
   if (operand.type == IMMEDIATE)
   {
-    return operand.immediate.size == SIXTEEN ? operand.immediate.immediate16 : operand.immediate.immediate8;
+    return operand.immediate;
   }
   else if (operand.type == REGISTER)
   {
-    ui16 regValue = registers[operand.reg.type];
+    ui16 regValue = cpu->registers[operand.reg.type];
     if (operand.reg.size == SIXTEEN)
     {
-      return regValue;
+      immediate.size        = SIXTEEN;
+      immediate.immediate16 = regValue;
     }
-    if (operand.reg.offset == 8)
+    else
     {
-      return regValue << 8;
+      immediate.size       = EIGHT;
+      immediate.immediate8 = operand.reg.offset == 8 ? regValue << 8 : regValue & 0xFF;
     }
-    return regValue & 0xFF;
   }
+  else if (operand.type == EFFECTIVEADDRESS)
+  {
+    ui16 effectiveAddress = getEffectiveAddress(cpu, operand.effectiveAddress);
+    immediate.size        = operand.effectiveAddress.immediate.size;
+    if (immediate.size == EIGHT)
+    {
+      immediate.immediate8 = cpu->memory[effectiveAddress];
+    }
+    else
+    {
+      immediate.immediate16 = *(ui16*)&cpu->memory[effectiveAddress];
+    }
+  }
+  return immediate;
+}
 
-  return 0;
+static inline void setMemoryValue(CPU* cpu, ui16 dest, Immediate value)
+{
+  if (value.size == SIXTEEN)
+  {
+    cpu->memory[dest]     = value.immediate16 & 0xFF;
+    cpu->memory[dest + 1] = value.immediate16 << 8;
+  }
+  else
+  {
+    cpu->memory[dest] = value.immediate8;
+  }
 }
 
 void executeMoveInstruction(CPU* cpu, Operand* operands)
 {
-  ui16* registers = cpu->registers;
+  Immediate immediate = getOperandValue(cpu, operands[1]);
   if (operands[0].type == REGISTER)
   {
-    ui16 value = getOperandValue(cpu->registers, operands[1]);
-    setRegisterValue(cpu, &operands[0].reg, value);
+    setRegisterValue(cpu, &operands[0].reg, immediate.size == EIGHT ? immediate.immediate8 : immediate.immediate16);
+  }
+  else if (operands[0].type == EFFECTIVEADDRESS)
+  {
+    ui16 dest = getEffectiveAddress(cpu, operands[0].effectiveAddress);
+    setMemoryValue(cpu, dest, immediate);
   }
 }
 
 void executeAddInstruction(CPU* cpu, Operand* operands)
 {
-  ui16 op1 = getOperandValue(cpu->registers, operands[1]);
-  ui16 op0 = getOperandValue(cpu->registers, operands[0]);
-  ui16 res = op0 + op1;
+  Immediate op1 = getOperandValue(cpu, operands[1]);
+  Immediate op0 = getOperandValue(cpu, operands[0]);
+  ui16      res = IMMEDIATE_VALUE(op0) + IMMEDIATE_VALUE(op1);
   if (operands[0].type == REGISTER)
   {
     setRegisterValue(cpu, &operands[0].reg, res);
@@ -866,9 +972,10 @@ void executeJumpNotZeroInstruction(CPU* cpu, Operand* operands, ui8** buffer)
 
 void executeCmpInstruction(CPU* cpu, Operand* operands)
 {
-  ui16 op1 = getOperandValue(cpu->registers, operands[1]);
-  ui16 op0 = getOperandValue(cpu->registers, operands[0]);
-  ui16 res = op0 - op1;
+  Immediate op1 = getOperandValue(cpu, operands[1]);
+  Immediate op0 = getOperandValue(cpu, operands[0]);
+  ui16      res = IMMEDIATE_VALUE(op0) - IMMEDIATE_VALUE(op1);
+
   if (operands[0].type == REGISTER)
   {
     printf("\t0x%04x(%d)\n", res, res);
@@ -878,9 +985,9 @@ void executeCmpInstruction(CPU* cpu, Operand* operands)
 
 void executeSubInstruction(CPU* cpu, Operand* operands)
 {
-  ui16 op1 = getOperandValue(cpu->registers, operands[1]);
-  ui16 op0 = getOperandValue(cpu->registers, operands[0]);
-  ui16 res = op0 - op1;
+  Immediate op1 = getOperandValue(cpu, operands[1]);
+  Immediate op0 = getOperandValue(cpu, operands[0]);
+  ui16      res = IMMEDIATE_VALUE(op0) - IMMEDIATE_VALUE(op1);
   if (operands[0].type == REGISTER)
   {
     setRegisterValue(cpu, &operands[0].reg, res);
@@ -930,7 +1037,7 @@ int main()
   ui8*        buffer;
   ui8*        end;
   int         len;
-  const char* name = "listing_49";
+  const char* name = "listing_51";
   read_file(&buffer, &len, name);
 
   end = buffer + len;
@@ -1125,7 +1232,6 @@ int main()
   }
   printf("Final stuff:\n");
   debugRegisters(registers);
-  printf("\t");
   debugIp(&cpu, buffer);
   printf("\n\tflags: ");
   debugFlags(cpu.flags);
