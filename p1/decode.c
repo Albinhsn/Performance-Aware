@@ -978,7 +978,6 @@ void executeCmpInstruction(CPU* cpu, Operand* operands)
 
   if (operands[0].type == REGISTER)
   {
-    printf("\t0x%04x(%d)\n", res, res);
     updateFlags(cpu, res);
   }
 }
@@ -1032,17 +1031,30 @@ void executeInstruction(CPU* cpu, Instruction instruction, ui8** buffer)
   }
 }
 
+#define MEMORY_SIZE 1024 * 1024
+void debugMemory(CPU* cpu)
+{
+  printf("memory:\n");
+  for (i32 i = 0; i < MEMORY_SIZE; i++)
+  {
+    if (cpu->memory[i] != 0)
+    {
+      printf("%d", cpu->memory[i]);
+    }
+  }
+}
+
 int main()
 {
   ui8*        buffer;
   ui8*        end;
   int         len;
-  const char* name = "listing_52";
+  const char* name = "listing_54";
   read_file(&buffer, &len, name);
 
   end = buffer + len;
-  printf("; %s.asm\n", name);
-  printf("bits 16\n\n");
+  // printf("; %s.asm\n", name);
+  // printf("bits 16\n\n");
 
   ui16 registers[NUMBER_OF_REGISTERS];
   for (i32 i = 0; i < NUMBER_OF_REGISTERS; i++)
@@ -1055,6 +1067,10 @@ int main()
   cpu.flags     = 0;
   cpu.start     = buffer;
   cpu.prev      = buffer;
+  for (i32 i = 0; i < MEMORY_SIZE; i++)
+  {
+    cpu.memory[i] = 0;
+  }
 
   while (buffer < end)
   {
@@ -1225,15 +1241,19 @@ int main()
     }
     buffer++;
     executeInstruction(&cpu, cpu.instruction, &buffer);
-    debugInstruction(&cpu, buffer);
+    // debugInstruction(&cpu, buffer);
 
     cpu.prevFlags = cpu.flags;
     cpu.prev      = buffer;
   }
-  printf("Final stuff:\n");
-  debugRegisters(registers);
-  debugIp(&cpu, buffer);
-  printf("\n\tflags: ");
-  debugFlags(cpu.flags);
-  printf("\n");
+  FILE* filePtr;
+  filePtr = fopen("test.data", "w");
+  fwrite(cpu.memory, MEMORY_SIZE, 1, filePtr);
+  fclose(filePtr);
+  // printf("Final stuff:\n");
+  // debugRegisters(registers);
+  // debugIp(&cpu, buffer);
+  // printf("\n\tflags: ");
+  // debugFlags(cpu.flags);
+  // printf("\n");
 }
