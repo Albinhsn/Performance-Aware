@@ -47,7 +47,7 @@ enum Operation
   JP,
   JO,
   JS,
-  JNE,
+  JNZ,
   JNL,
   JNLE,
   JNB,
@@ -101,9 +101,22 @@ typedef struct EffectiveAddress EffectiveAddress;
 #define NUMBER_OF_REGISTERS 8
 char* registerNames[NUMBER_OF_REGISTERS] = {"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
 
-void  debugRegisters(ui16* registers)
+void  debugFlags(ui8 flags)
 {
-  printf("--\n");
+  bool f = false;
+  if (GETZF(flags))
+  {
+    printf(" Z");
+    f = true;
+  }
+  if (GETSF(flags))
+  {
+    printf(" S");
+    f = true;
+  }
+}
+void debugRegisters(ui16* registers)
+{
   for (i32 i = 0; i < NUMBER_OF_REGISTERS; i++)
   {
     if (registers[i] != 0)
@@ -111,7 +124,6 @@ void  debugRegisters(ui16* registers)
       printf("\t%s: x0%04x(%d)\n", registerNames[i], registers[i], registers[i]);
     }
   }
-  printf("--\n");
 }
 
 enum RegisterType
@@ -151,14 +163,18 @@ struct Instruction
 {
   Operation op;
   Operand   operands[2];
+  ui16      memoryLocation;
 };
 typedef struct Instruction Instruction;
 
 struct CPU
 {
-  ui16* registers;
-  ui8   flags;
-  ui16  ip;
+  ui16*       registers;
+  ui8         flags;
+  ui8         prevFlags;
+  Instruction instruction;
+  ui8*        start;
+  ui8*        prev;
 };
 typedef struct CPU CPU;
 
@@ -185,7 +201,7 @@ void               parseRegister(Register* regis, ui8 reg, bool w)
     regis->offset = 8;
   }
 }
-const char* opToString[]  = {"mov", "add", "sub", "cmp", "je", "jl", "jle", "jb", "jbe", "jp", "jo", "js", "jne", "jnl", "jnle", "jnb", "jnbe", "jnp", "jno", "jns", "loop", "loopz", "loopnz", "jcxz"};
+const char* opToString[]  = {"mov", "add", "sub", "cmp", "je", "jl", "jle", "jb", "jbe", "jp", "jo", "js", "jnz", "jnl", "jnle", "jnb", "jnbe", "jnp", "jno", "jns", "loop", "loopz", "loopnz", "jcxz"};
 
 const char* regToString[] = {"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
 const char* regToStringHigh[] = {"ah", "ch", "dh", "bh"};
@@ -257,10 +273,15 @@ void debugOperand(Operand operand)
   }
 }
 
-void debugInstruction(Instruction instruction)
+void debugIp(CPU* cpu, ui8* buffer)
 {
-  printf("%s ", opToString[instruction.op]);
-  switch (instruction.op)
+  printf("\t\tip:0x%04x->0x%04x(%d)", (int)(cpu->prev - cpu->start), (i32)(buffer - cpu->start), (i32)(buffer - cpu->start));
+}
+
+void debugInstruction(CPU* cpu, ui8* buffer)
+{
+  printf("%s ", opToString[cpu->instruction.op]);
+  switch (cpu->instruction.op)
   {
   case MOV:
   {
@@ -273,17 +294,28 @@ void debugInstruction(Instruction instruction)
   }
   case CMP:
   {
-    debugOperand(instruction.operands[0]);
+    debugOperand(cpu->instruction.operands[0]);
     printf(", ");
-    debugOperand(instruction.operands[1]);
+    debugOperand(cpu->instruction.operands[1]);
     printf("; ");
     break;
   }
+
   default:
   {
-    printf("%d ; ", instruction.operands[0].immediate.immediate8);
+    printf("%d;", *(i8*)&cpu->instruction.operands[0].immediate.immediate8);
+    break;
   }
   }
+  debugIp(cpu, buffer);
+  if (cpu->flags != cpu->prevFlags)
+  {
+    printf("\t\tflags:");
+    debugFlags(cpu->prevFlags);
+    printf("->");
+    debugFlags(cpu->flags);
+  }
+  printf("\n");
 }
 
 bool read_file(unsigned char** buffer, int* len, const char* fileName)
@@ -741,21 +773,6 @@ static inline bool matchRegMemoryMove(ui8 current)
   return (current >> 2 & 0b111111) == 0b100010;
 }
 
-void debugFlags(ui8 flags)
-{
-  bool f = false;
-  if (GETZF(flags))
-  {
-    printf(" Z");
-    f = true;
-  }
-  if (GETSF(flags))
-  {
-    printf(" S");
-    f = true;
-  }
-}
-
 void updateFlags(CPU* cpu, ui16 value)
 {
   ui16 prev  = cpu->flags;
@@ -767,14 +784,6 @@ void updateFlags(CPU* cpu, ui16 value)
   else if ((value & 0x8000) != 0)
   {
     SETSF(cpu->flags);
-  }
-  if (cpu->flags != prev)
-  {
-    printf("\tflags:");
-    debugFlags(prev);
-    printf("->");
-    debugFlags(cpu->flags);
-    printf("\n");
   }
 }
 
@@ -801,8 +810,6 @@ void setRegisterValue(CPU* cpu, Register* reg, ui16 value)
     *regValue = *regValue & 0xFF00;
     *regValue = *regValue | (v << 8);
   }
-
-  printf("\t%s\t0x%05x -> 0x%04x(%d)\n", registerNames[reg->type], prevValue, *regValue, *regValue);
 }
 
 ui16 getOperandValue(ui16* registers, Operand operand)
@@ -849,6 +856,14 @@ void executeAddInstruction(CPU* cpu, Operand* operands)
     updateFlags(cpu, res);
   }
 }
+void executeJumpNotZeroInstruction(CPU* cpu, Operand* operands, ui8** buffer)
+{
+  if (!GETZF(cpu->flags))
+  {
+    *buffer += *(i8*)&operands[0].immediate.immediate8;
+  }
+}
+
 void executeCmpInstruction(CPU* cpu, Operand* operands)
 {
   ui16 op1 = getOperandValue(cpu->registers, operands[1]);
@@ -873,7 +888,7 @@ void executeSubInstruction(CPU* cpu, Operand* operands)
   }
 }
 
-void executeInstruction(CPU* cpu, Instruction instruction)
+void executeInstruction(CPU* cpu, Instruction instruction, ui8** buffer)
 {
   switch (instruction.op)
   {
@@ -895,6 +910,12 @@ void executeInstruction(CPU* cpu, Instruction instruction)
   case CMP:
   {
     executeCmpInstruction(cpu, instruction.operands);
+    break;
+  }
+  case JNZ:
+  {
+    executeJumpNotZeroInstruction(cpu, instruction.operands, buffer);
+    break;
   }
   default:
   {
@@ -909,181 +930,185 @@ int main()
   ui8*        buffer;
   ui8*        end;
   int         len;
-  const char* name = "listing_46";
+  const char* name = "listing_49";
   read_file(&buffer, &len, name);
 
   end = buffer + len;
   printf("; %s.asm\n", name);
   printf("bits 16\n\n");
 
-  Instruction instructions[256];
-  ui16        current = 0;
-
-  ui16        registers[8];
-  CPU         cpu;
+  ui16 registers[NUMBER_OF_REGISTERS];
+  for (i32 i = 0; i < NUMBER_OF_REGISTERS; i++)
+  {
+    registers[i] = 0;
+  }
+  CPU cpu;
   cpu.registers = &registers[0];
-  cpu.ip        = 0;
+  cpu.prevFlags = 0;
+  cpu.flags     = 0;
+  cpu.start     = buffer;
+  cpu.prev      = buffer;
 
   while (buffer < end)
   {
     if (matchRegMemoryAdd(buffer[0]))
     {
-      instructions[current].op = ADD;
-      parseRegMemory(&instructions[current].operands[0], &buffer, "add");
+      cpu.instruction.op = ADD;
+      parseRegMemory(&cpu.instruction.operands[0], &buffer, "add");
     }
     else if (matchRegMemoryCmp(buffer[0]))
     {
-      instructions[current].op = CMP;
-      parseRegMemory(&instructions[current].operands[0], &buffer, "cmp");
+      cpu.instruction.op = CMP;
+      parseRegMemory(&cpu.instruction.operands[0], &buffer, "cmp");
     }
     else if (matchRegMemorySub(buffer[0]))
     {
-      instructions[current].op = SUB;
-      parseRegMemory(&instructions[current].operands[0], &buffer, "sub");
+      cpu.instruction.op = SUB;
+      parseRegMemory(&cpu.instruction.operands[0], &buffer, "sub");
     }
     else if (matchImmediateToRegMemory(buffer[0]))
     {
-      parseImmediateToRegMemoryAddSubCmp(&instructions[current], &buffer);
+      parseImmediateToRegMemoryAddSubCmp(&cpu.instruction, &buffer);
     }
     else if (matchImmediateToAccumulatorCmp(buffer[0]))
     {
-      instructions[current].op = CMP;
-      parseImmediateToAccumulator(&instructions[current].operands[0], &buffer, "cmp");
+      cpu.instruction.op = CMP;
+      parseImmediateToAccumulator(&cpu.instruction.operands[0], &buffer, "cmp");
     }
     else if (matchImmediateToAccumulatorSub(buffer[0]))
     {
-      instructions[current].op = SUB;
-      parseImmediateToAccumulator(&instructions[current].operands[0], &buffer, "sub");
+      cpu.instruction.op = SUB;
+      parseImmediateToAccumulator(&cpu.instruction.operands[0], &buffer, "sub");
     }
     else if (matchImmediateToAccumulatorAdd(buffer[0]))
     {
-      instructions[current].op = ADD;
-      parseImmediateToAccumulator(&instructions[current].operands[0], &buffer, "add");
+      cpu.instruction.op = ADD;
+      parseImmediateToAccumulator(&cpu.instruction.operands[0], &buffer, "add");
     }
     else if (matchImmediateToRegMove(buffer[0]))
     {
-      instructions[current].op = MOV;
-      parseImmediateToRegMove(&instructions[current].operands[0], &buffer);
+      cpu.instruction.op = MOV;
+      parseImmediateToRegMove(&cpu.instruction.operands[0], &buffer);
     }
     else if (matchAccumulatorToMemoryMov(buffer[0]))
     {
-      instructions[current].op = MOV;
-      parseAccumulatorToMemoryMov(&instructions[current].operands[0], &buffer, false);
+      cpu.instruction.op = MOV;
+      parseAccumulatorToMemoryMov(&cpu.instruction.operands[0], &buffer, false);
     }
     else if (matchMemoryToAccumulatorMov(buffer[0]))
     {
-      instructions[current].op = MOV;
-      parseAccumulatorToMemoryMov(&instructions[current].operands[0], &buffer, true);
+      cpu.instruction.op = MOV;
+      parseAccumulatorToMemoryMov(&cpu.instruction.operands[0], &buffer, true);
     }
     else if (matchImmediateToRegMemoryMove(buffer[0]))
     {
-      instructions[current].op = MOV;
-      parseImmediateToRegMemoryMove(&instructions[current].operands[0], &buffer);
+      cpu.instruction.op = MOV;
+      parseImmediateToRegMemoryMove(&cpu.instruction.operands[0], &buffer);
     }
     else if (matchRegMemoryMove(buffer[0]))
     {
-      instructions[current].op = MOV;
-      parseRegMemory(&instructions[current].operands[0], &buffer, "mov");
+      cpu.instruction.op = MOV;
+      parseRegMemory(&cpu.instruction.operands[0], &buffer, "mov");
     }
     else if (matchJE(buffer[0]))
     {
-      instructions[current].op = JE;
-      parseJump(&instructions[current].operands[0], &buffer, "je");
+      cpu.instruction.op = JE;
+      parseJump(&cpu.instruction.operands[0], &buffer, "je");
     }
     else if (matchJL(buffer[0]))
     {
-      instructions[current].op = JL;
-      parseJump(&instructions[current].operands[0], &buffer, "jl");
+      cpu.instruction.op = JL;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jl");
     }
     else if (matchJLE(buffer[0]))
     {
-      instructions[current].op = JLE;
-      parseJump(&instructions[current].operands[0], &buffer, "jle");
+      cpu.instruction.op = JLE;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jle");
     }
     else if (matchJB(buffer[0]))
     {
-      instructions[current].op = JB;
-      parseJump(&instructions[current].operands[0], &buffer, "jb");
+      cpu.instruction.op = JB;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jb");
     }
     else if (matchJBE(buffer[0]))
     {
-      instructions[current].op = JBE;
-      parseJump(&instructions[current].operands[0], &buffer, "jbe");
+      cpu.instruction.op = JBE;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jbe");
     }
     else if (matchJP(buffer[0]))
     {
-      instructions[current].op = JP;
-      parseJump(&instructions[current].operands[0], &buffer, "jp");
+      cpu.instruction.op = JP;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jp");
     }
     else if (matchJO(buffer[0]))
     {
-      instructions[current].op = JO;
-      parseJump(&instructions[current].operands[0], &buffer, "jo");
+      cpu.instruction.op = JO;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jo");
     }
     else if (matchJS(buffer[0]))
     {
-      instructions[current].op = JS;
-      parseJump(&instructions[current].operands[0], &buffer, "js");
+      cpu.instruction.op = JS;
+      parseJump(&cpu.instruction.operands[0], &buffer, "js");
     }
     else if (matchJNE(buffer[0]))
     {
-      instructions[current].op = JNE;
-      parseJump(&instructions[current].operands[0], &buffer, "jne");
+      cpu.instruction.op = JNZ;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jne");
     }
     else if (matchJNL(buffer[0]))
     {
-      instructions[current].op = JNL;
-      parseJump(&instructions[current].operands[0], &buffer, "jnl");
+      cpu.instruction.op = JNL;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jnl");
     }
     else if (matchJNLE(buffer[0]))
     {
-      instructions[current].op = JNLE;
-      parseJump(&instructions[current].operands[0], &buffer, "jnle");
+      cpu.instruction.op = JNLE;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jnle");
     }
     else if (matchJNB(buffer[0]))
     {
-      instructions[current].op = JNB;
-      parseJump(&instructions[current].operands[0], &buffer, "jnb");
+      cpu.instruction.op = JNB;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jnb");
     }
     else if (matchJNBE(buffer[0]))
     {
-      instructions[current].op = JNBE;
-      parseJump(&instructions[current].operands[0], &buffer, "jnbe");
+      cpu.instruction.op = JNBE;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jnbe");
     }
     else if (matchJNP(buffer[0]))
     {
-      instructions[current].op = JP;
-      parseJump(&instructions[current].operands[0], &buffer, "jp");
+      cpu.instruction.op = JP;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jp");
     }
     else if (matchJNO(buffer[0]))
     {
-      instructions[current].op = JNO;
-      parseJump(&instructions[current].operands[0], &buffer, "jno");
+      cpu.instruction.op = JNO;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jno");
     }
     else if (matchJNS(buffer[0]))
     {
-      instructions[current].op = JNS;
-      parseJump(&instructions[current].operands[0], &buffer, "jns");
+      cpu.instruction.op = JNS;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jns");
     }
     else if (matchLoop(buffer[0]))
     {
-      instructions[current].op = LOOP;
-      parseJump(&instructions[current].operands[0], &buffer, "loop");
+      cpu.instruction.op = LOOP;
+      parseJump(&cpu.instruction.operands[0], &buffer, "loop");
     }
     else if (matchLoopz(buffer[0]))
     {
-      instructions[current].op = LOOPZ;
-      parseJump(&instructions[current].operands[0], &buffer, "loopz");
+      cpu.instruction.op = LOOPZ;
+      parseJump(&cpu.instruction.operands[0], &buffer, "loopz");
     }
     else if (matchLoopnz(buffer[0]))
     {
-      instructions[current].op = LOOPNZ;
-      parseJump(&instructions[current].operands[0], &buffer, "loopnz");
+      cpu.instruction.op = LOOPNZ;
+      parseJump(&cpu.instruction.operands[0], &buffer, "loopnz");
     }
     else if (matchJCXZ(buffer[0]))
     {
-      instructions[current].op = JCXZ;
-      parseJump(&instructions[current].operands[0], &buffer, "jcxz");
+      cpu.instruction.op = JCXZ;
+      parseJump(&cpu.instruction.operands[0], &buffer, "jcxz");
     }
     else
     {
@@ -1091,13 +1116,18 @@ int main()
       debugByte(buffer[0]);
       exit(1);
     }
-    debugInstruction(instructions[current]);
-    executeInstruction(&cpu, instructions[current]);
-    // debugRegisters(registers);
-    current++;
     buffer++;
+    executeInstruction(&cpu, cpu.instruction, &buffer);
+    debugInstruction(&cpu, buffer);
+
+    cpu.prevFlags = cpu.flags;
+    cpu.prev      = buffer;
   }
   printf("Final stuff:\n");
   debugRegisters(registers);
+  printf("\t");
+  debugIp(&cpu, buffer);
+  printf("\n\tflags: ");
   debugFlags(cpu.flags);
+  printf("\n");
 }
