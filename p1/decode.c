@@ -174,7 +174,6 @@ struct Instruction
 {
   Operation op;
   Operand   operands[2];
-  ui16      memoryLocation;
 };
 typedef struct Instruction Instruction;
 
@@ -186,6 +185,7 @@ struct CPU
   Instruction instruction;
   ui8*        start;
   ui8*        prev;
+  ui16        cycles;
   ui8         memory[1024 * 1024];
 };
 typedef struct CPU CPU;
@@ -289,9 +289,285 @@ void debugIp(CPU* cpu, ui8* buffer)
 {
   printf("\t\tip:0x%04x->0x%04x(%d)", (int)(cpu->prev - cpu->start), (i32)(buffer - cpu->start), (i32)(buffer - cpu->start));
 }
+static inline ui16 calculateEffectiveAddress(CPU* cpu, ui8 rm)
+{
+  switch (rm)
+  {
+  case 0:
+  {
+    return GET_BX(cpu) + GET_SI(cpu);
+  }
+  case 1:
+  {
+    return GET_BX(cpu) + GET_DI(cpu);
+  }
+  case 2:
+  {
+    return GET_BP(cpu) + GET_SI(cpu);
+  }
+  case 3:
+  {
+    return GET_BP(cpu) + GET_DI(cpu);
+  }
+  case 4:
+  {
+    return GET_SI(cpu);
+  }
+  case 5:
+  {
+    return GET_DI(cpu);
+  }
+  case 6:
+  {
+    return GET_BP(cpu);
+  }
+  case 7:
+  {
+    return GET_BX(cpu);
+  }
+  default:
+  {
+    printf("HUH\n");
+    exit(1);
+  }
+  }
+}
+static ui16 getEffectiveAddress(CPU* cpu, EffectiveAddress effectiveAddress)
+{
+  if (effectiveAddress.mod == 0 && effectiveAddress.rm == 6)
+  {
+    return IMMEDIATE_VALUE(effectiveAddress.immediate);
+  }
+  ui16 effective = calculateEffectiveAddress(cpu, effectiveAddress.rm);
+  if (effectiveAddress.mod == 0)
+  {
+    return effective;
+  }
+  if (effectiveAddress.mod == 1)
+  {
+    return effective + effectiveAddress.immediate.immediate8;
+  }
+
+  return effective + effectiveAddress.immediate.immediate16;
+}
+
+struct Cycles
+{
+  ui8 normal;
+  ui8 ea;
+  ui8 penalty;
+};
+typedef struct Cycles Cycles;
+
+ui8                   effectiveAddressNoDisplacementTable[8] = {
+    7, // BX + SI
+    8, // BX + DI
+    8, // BP + SI
+    7, // BP + DI
+    5, // SI
+    5, // DI
+    6, // DIRECT ADDRESS
+    5, // BX
+};
+ui8 effectiveAddressDisplacementTable[8] = {
+
+    11, // BX + SI + DISP
+    12, // BX + DI + DISP
+    12, // BP + SI + DISP
+    11, // BP + DI + DISP
+    9,  // SI + DISP
+    9,  // DI + DISP
+    9,  // BP + DISP
+    9,  // BX + DISP
+};
+
+void calcPenalty(CPU* cpu, Cycles* cycles, ui8 transfers, EffectiveAddress effectiveAddress)
+{
+  if (effectiveAddress.immediate.size == SIXTEEN && getEffectiveAddress(cpu, effectiveAddress) % 2 != 0)
+  {
+    cycles->penalty += transfers * 4;
+  }
+}
+
+ui8 calcEffectiveAddressCycles(CPU* cpu, EffectiveAddress effectiveAddress)
+{
+  if (effectiveAddress.mod == 1)
+  {
+    return effectiveAddressNoDisplacementTable[effectiveAddress.rm];
+  }
+  else if (effectiveAddress.immediate.size == ZERO)
+  {
+    if (effectiveAddress.rm == 6)
+    {
+      return 5;
+    }
+    return effectiveAddressNoDisplacementTable[effectiveAddress.rm];
+  }
+  return effectiveAddressDisplacementTable[effectiveAddress.rm];
+}
+
+Cycles calcCyclesAdd(CPU* cpu, Operand* operands)
+{
+  Cycles cycles;
+  cycles.normal  = 0;
+  cycles.ea      = 0;
+  cycles.penalty = 0;
+  switch (operands[0].type)
+  {
+  case REGISTER:
+  {
+    if (operands[1].type == REGISTER)
+    {
+      cycles.normal = 3;
+    }
+    else if (operands[1].type == EFFECTIVEADDRESS)
+    {
+      cycles.normal = 9;
+      cycles.ea     = calcEffectiveAddressCycles(cpu, operands[1].effectiveAddress);
+      calcPenalty(cpu, &cycles, 1, operands[1].effectiveAddress);
+    }
+    else if (operands[1].type == IMMEDIATE)
+    {
+      cycles.normal = 4;
+    }
+    else
+    {
+      printf("HUH\n");
+      exit(1);
+    }
+    break;
+  }
+  case IMMEDIATE:
+  {
+    printf("HUH\n");
+    exit(1);
+  }
+  case EFFECTIVEADDRESS:
+  {
+    if (operands[1].type == REGISTER)
+    {
+      cycles.normal = 16;
+      cycles.ea     = calcEffectiveAddressCycles(cpu, operands[0].effectiveAddress);
+      calcPenalty(cpu, &cycles, 2, operands[0].effectiveAddress);
+    }
+    else if (operands[1].type == IMMEDIATE)
+    {
+      cycles.normal = 17;
+      cycles.ea     = calcEffectiveAddressCycles(cpu, operands[0].effectiveAddress);
+      calcPenalty(cpu, &cycles, 2, operands[0].effectiveAddress);
+    }
+    else
+    {
+      printf("HUH\n");
+      exit(1);
+    }
+    break;
+  }
+  case ACCUMULATOR:
+  {
+    cycles.normal = 4;
+  }
+  }
+  return cycles;
+}
+
+Cycles calcCyclesMov(CPU* cpu, Operand* operands)
+{
+  Cycles cycles;
+  cycles.normal  = 0;
+  cycles.ea      = 0;
+  cycles.penalty = 0;
+  switch (operands[0].type)
+  {
+  case REGISTER:
+  {
+    if (operands[1].type == REGISTER)
+    {
+      cycles.normal = 2;
+    }
+    else if (operands[1].type == EFFECTIVEADDRESS)
+    {
+      cycles.normal = 8;
+      cycles.ea     = calcEffectiveAddressCycles(cpu, operands[1].effectiveAddress);
+      calcPenalty(cpu, &cycles, 1, operands[1].effectiveAddress);
+    }
+    else if (operands[1].type == IMMEDIATE)
+    {
+      cycles.normal = 4;
+    }
+    else
+    {
+      printf("HUH\n");
+      exit(1);
+    }
+    break;
+  }
+  case IMMEDIATE:
+  {
+    printf("HUH\n");
+    exit(1);
+  }
+  case EFFECTIVEADDRESS:
+  {
+    if (operands[1].type == REGISTER)
+    {
+      cycles.normal = 9;
+      cycles.ea     = calcEffectiveAddressCycles(cpu, operands[0].effectiveAddress);
+      calcPenalty(cpu, &cycles, 1, operands[0].effectiveAddress);
+    }
+    else if (operands[1].type == IMMEDIATE)
+    {
+      cycles.normal = 10;
+      cycles.ea     = calcEffectiveAddressCycles(cpu, operands[0].effectiveAddress);
+      calcPenalty(cpu, &cycles, 1, operands[0].effectiveAddress);
+    }
+    else if (operands[1].type == ACCUMULATOR)
+    {
+      cycles.normal = 10;
+    }
+    else
+    {
+      printf("HUH\n");
+      exit(1);
+    }
+    break;
+  }
+  case ACCUMULATOR:
+  {
+    cycles.normal = 10;
+  }
+  }
+  return cycles;
+}
+
+Cycles calcCycles(CPU* cpu)
+{
+  switch (cpu->instruction.op)
+  {
+  case MOV:
+  {
+    return calcCyclesMov(cpu, cpu->instruction.operands);
+  }
+  case ADD:
+  {
+    return calcCyclesAdd(cpu, cpu->instruction.operands);
+  }
+  case SUB:
+  {
+  }
+  case CMP:
+  {
+  }
+  default:
+  {
+  }
+  }
+  return (Cycles){.normal = 0, .ea = 0};
+}
 
 void debugInstruction(CPU* cpu, ui8* buffer)
 {
+
   printf("%s ", opToString[cpu->instruction.op]);
   switch (cpu->instruction.op)
   {
@@ -319,15 +595,32 @@ void debugInstruction(CPU* cpu, ui8* buffer)
     break;
   }
   }
-  debugIp(cpu, buffer);
-  if (cpu->flags != cpu->prevFlags)
+  // debugIp(cpu, buffer);
+  // if (cpu->flags != cpu->prevFlags)
+  // {
+  //   printf("\t\tflags:");
+  //   debugFlags(cpu->prevFlags);
+  //   printf("->");
+  //   debugFlags(cpu->flags);
+  // }
+  // printf("\n");
+  Cycles cycles = calcCycles(cpu);
+  printf("\tcycles: %d", cycles.normal + cycles.ea);
+  if (cycles.ea || cycles.penalty)
   {
-    printf("\t\tflags:");
-    debugFlags(cpu->prevFlags);
-    printf("->");
-    debugFlags(cpu->flags);
+    printf("(%d", cycles.normal);
+    if (cycles.ea)
+    {
+      printf(", ea: %d", cycles.ea);
+    }
+    if (cycles.penalty)
+    {
+      printf(", p: %d", cycles.penalty);
+    }
+    printf(")");
   }
-  printf("\n");
+  cpu->cycles += cycles.normal + cycles.ea + cycles.penalty;
+  printf(" -> total: %d\n", cpu->cycles);
 }
 
 bool read_file(unsigned char** buffer, int* len, const char* fileName)
@@ -824,69 +1117,6 @@ void setRegisterValue(CPU* cpu, Register* reg, ui16 value)
   }
 }
 
-static inline ui16 calculateEffectiveAddress(CPU* cpu, ui8 rm)
-{
-  switch (rm)
-  {
-  case 0:
-  {
-    return GET_BX(cpu) + GET_SI(cpu);
-  }
-  case 1:
-  {
-    return GET_BX(cpu) + GET_DI(cpu);
-  }
-  case 2:
-  {
-    return GET_BP(cpu) + GET_SI(cpu);
-  }
-  case 3:
-  {
-    return GET_BP(cpu) + GET_DI(cpu);
-  }
-  case 4:
-  {
-    return GET_SI(cpu);
-  }
-  case 5:
-  {
-    return GET_DI(cpu);
-  }
-  case 6:
-  {
-    return GET_BP(cpu);
-  }
-  case 7:
-  {
-    return GET_BX(cpu);
-  }
-  default:
-  {
-    printf("HUH\n");
-    exit(1);
-  }
-  }
-}
-
-static ui16 getEffectiveAddress(CPU* cpu, EffectiveAddress effectiveAddress)
-{
-  if (effectiveAddress.mod == 0 && effectiveAddress.rm == 6)
-  {
-    return IMMEDIATE_VALUE(effectiveAddress.immediate);
-  }
-  ui16 effective = calculateEffectiveAddress(cpu, effectiveAddress.rm);
-  if (effectiveAddress.mod == 0)
-  {
-    return effective;
-  }
-  if (effectiveAddress.mod == 1)
-  {
-    return effective + effectiveAddress.immediate.immediate8;
-  }
-
-  return effective + effectiveAddress.immediate.immediate16;
-}
-
 Immediate getOperandValue(CPU* cpu, Operand operand)
 {
   Immediate immediate;
@@ -1049,7 +1279,7 @@ int main()
   ui8*        buffer;
   ui8*        end;
   int         len;
-  const char* name = "listing_54";
+  const char* name = "listing_57";
   read_file(&buffer, &len, name);
 
   end = buffer + len;
@@ -1067,6 +1297,7 @@ int main()
   cpu.flags     = 0;
   cpu.start     = buffer;
   cpu.prev      = buffer;
+  cpu.cycles    = 0;
   for (i32 i = 0; i < MEMORY_SIZE; i++)
   {
     cpu.memory[i] = 0;
@@ -1241,7 +1472,7 @@ int main()
     }
     buffer++;
     executeInstruction(&cpu, cpu.instruction, &buffer);
-    // debugInstruction(&cpu, buffer);
+    debugInstruction(&cpu, buffer);
 
     cpu.prevFlags = cpu.flags;
     cpu.prev      = buffer;
