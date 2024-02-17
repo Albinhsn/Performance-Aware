@@ -7,7 +7,6 @@
 typedef uint8_t  ui8;
 typedef uint16_t ui16;
 typedef uint32_t ui32;
-typedef bool     u1;
 
 typedef float    f32;
 typedef double   f64;
@@ -21,17 +20,6 @@ char*            registerToRegisterEncoding16[] = {"ax", "cx", "dx", "bx", "sp",
 char*            registerToRegisterEncoding8[]  = {"al", "cl", "dl", "bl", "ah", "ch", "dh", "bh"};
 char*            registerMemoryEncoding0[]      = {"bx + si", "bx + di", "bp + si", "bp + di", "si", "di", "", "bx"};
 char*            registerMemoryEncoding1[]      = {"bx + si", "bx + di", "bp + si", "bp + di", "si", "di", "bp", "bx"};
-
-#define CF           0
-#define PF           1
-#define AF           2
-#define ZF           3
-#define SF           4
-#define GETZF(flags) ((flags >> (ZF - 1)) & 0b1)
-#define GETSF(flags) ((flags >> (SF - 1)) & 0b1)
-
-#define SETZF(flags) (flags = flags | 0b100)
-#define SETSF(flags) (flags = flags | 0b1000)
 
 enum Operation
 {
@@ -98,22 +86,6 @@ struct EffectiveAddress
 };
 typedef struct EffectiveAddress EffectiveAddress;
 
-#define NUMBER_OF_REGISTERS 8
-char* registerNames[NUMBER_OF_REGISTERS] = {"ax", "cx", "dx", "bx", "sp", "bp", "si", "di"};
-
-void  debugRegisters(ui16* registers)
-{
-  printf("--\n");
-  for (i32 i = 0; i < NUMBER_OF_REGISTERS; i++)
-  {
-    if (registers[i] != 0)
-    {
-      printf("\t%s: x0%04x(%d)\n", registerNames[i], registers[i], registers[i]);
-    }
-  }
-  printf("--\n");
-}
-
 enum RegisterType
 {
   A,
@@ -129,9 +101,9 @@ typedef enum RegisterType RegisterType;
 
 struct Register
 {
-  RegisterType  type;
-  ui8           offset;
-  ImmediateSize size;
+  RegisterType type;
+  ui8          offset;
+  ui16         size;
 };
 typedef struct Register Register;
 
@@ -154,34 +126,26 @@ struct Instruction
 };
 typedef struct Instruction Instruction;
 
-struct CPU
-{
-  ui16* registers;
-  ui8   flags;
-  ui16  ip;
-};
-typedef struct CPU CPU;
+RegisterType               registerEncoded[8] = {A, C, D, B, SP, BP, SI, DI};
 
-RegisterType       registerEncoded[8] = {A, C, D, B, SP, BP, SI, DI};
-
-void               parseRegister(Register* regis, ui8 reg, bool w)
+void                       parseRegister(Register* regis, ui8 reg, bool w)
 {
   if (w)
   {
     regis->offset = 0;
-    regis->size   = SIXTEEN;
+    regis->size   = 16;
     regis->type   = registerEncoded[reg];
   }
   else if (reg <= 3)
   {
     regis->offset = 0;
-    regis->size   = EIGHT;
+    regis->size   = 8;
     regis->type   = registerEncoded[reg];
   }
   else
   {
     regis->type   = registerEncoded[reg - 4];
-    regis->size   = EIGHT;
+    regis->size   = 8;
     regis->offset = 8;
   }
 }
@@ -193,7 +157,7 @@ const char* regToStringLow[]  = {"al", "cl", "dl", "bl"};
 
 void        debugRegister(Register reg)
 {
-  if (reg.size == SIXTEEN)
+  if (reg.size == 16)
   {
     printf("%s", regToString[reg.type]);
   }
@@ -212,7 +176,7 @@ void debugEffectiveAddress(EffectiveAddress effectiveAddress)
   printf("[");
   if (effectiveAddress.mod == 0 && effectiveAddress.rm == 6)
   {
-    printf("%d", effectiveAddress.immediate.size == EIGHT ? effectiveAddress.immediate.immediate8 : effectiveAddress.immediate.immediate16);
+    printf("%d", effectiveAddress.immediate.size == 8 ? effectiveAddress.immediate.immediate8 : effectiveAddress.immediate.immediate16);
   }
   else
   {
@@ -276,12 +240,12 @@ void debugInstruction(Instruction instruction)
     debugOperand(instruction.operands[0]);
     printf(", ");
     debugOperand(instruction.operands[1]);
-    printf("; ");
+    printf("\n");
     break;
   }
   default:
   {
-    printf("%d ; ", instruction.operands[0].immediate.immediate8);
+    printf("%d\n", instruction.operands[0].immediate.immediate8);
   }
   }
 }
@@ -741,175 +705,12 @@ static inline bool matchRegMemoryMove(ui8 current)
   return (current >> 2 & 0b111111) == 0b100010;
 }
 
-void debugFlags(ui8 flags)
-{
-  bool f = false;
-  if (GETZF(flags))
-  {
-    printf(" Z");
-    f = true;
-  }
-  if (GETSF(flags))
-  {
-    printf(" S");
-    f = true;
-  }
-}
-
-void updateFlags(CPU* cpu, ui16 value)
-{
-  ui16 prev  = cpu->flags;
-  cpu->flags = 0;
-  if (value == 0)
-  {
-    SETZF(cpu->flags);
-  }
-  else if ((value & 0x8000) != 0)
-  {
-    SETSF(cpu->flags);
-  }
-  if (cpu->flags != prev)
-  {
-    printf("\tflags:");
-    debugFlags(prev);
-    printf("->");
-    debugFlags(cpu->flags);
-    printf("\n");
-  }
-}
-
-void setRegisterValue(CPU* cpu, Register* reg, ui16 value)
-{
-  ui16* regValue  = &cpu->registers[reg->type];
-  ui16  prevValue = *regValue;
-  if (reg->offset == 0)
-  {
-    if (reg->size == EIGHT)
-    {
-      ui8 v     = (ui8)value;
-      *regValue = *regValue & 0x00FF;
-      *regValue = *regValue | v;
-    }
-    else
-    {
-      *regValue = value;
-    }
-  }
-  else
-  {
-    ui8 v     = (ui8)value;
-    *regValue = *regValue & 0xFF00;
-    *regValue = *regValue | (v << 8);
-  }
-
-  printf("\t%s\t0x%05x -> 0x%04x(%d)\n", registerNames[reg->type], prevValue, *regValue, *regValue);
-}
-
-ui16 getOperandValue(ui16* registers, Operand operand)
-{
-  if (operand.type == IMMEDIATE)
-  {
-    return operand.immediate.size == SIXTEEN ? operand.immediate.immediate16 : operand.immediate.immediate8;
-  }
-  else if (operand.type == REGISTER)
-  {
-    ui16 regValue = registers[operand.reg.type];
-    if (operand.reg.size == SIXTEEN)
-    {
-      return regValue;
-    }
-    if (operand.reg.offset == 8)
-    {
-      return regValue << 8;
-    }
-    return regValue & 0xFF;
-  }
-
-  return 0;
-}
-
-void executeMoveInstruction(CPU* cpu, Operand* operands)
-{
-  ui16* registers = cpu->registers;
-  if (operands[0].type == REGISTER)
-  {
-    ui16 value = getOperandValue(cpu->registers, operands[1]);
-    setRegisterValue(cpu, &operands[0].reg, value);
-  }
-}
-
-void executeAddInstruction(CPU* cpu, Operand* operands)
-{
-  ui16 op1 = getOperandValue(cpu->registers, operands[1]);
-  ui16 op0 = getOperandValue(cpu->registers, operands[0]);
-  ui16 res = op0 + op1;
-  if (operands[0].type == REGISTER)
-  {
-    setRegisterValue(cpu, &operands[0].reg, res);
-    updateFlags(cpu, res);
-  }
-}
-void executeCmpInstruction(CPU* cpu, Operand* operands)
-{
-  ui16 op1 = getOperandValue(cpu->registers, operands[1]);
-  ui16 op0 = getOperandValue(cpu->registers, operands[0]);
-  ui16 res = op0 - op1;
-  if (operands[0].type == REGISTER)
-  {
-    printf("\t0x%04x(%d)\n", res, res);
-    updateFlags(cpu, res);
-  }
-}
-
-void executeSubInstruction(CPU* cpu, Operand* operands)
-{
-  ui16 op1 = getOperandValue(cpu->registers, operands[1]);
-  ui16 op0 = getOperandValue(cpu->registers, operands[0]);
-  ui16 res = op0 - op1;
-  if (operands[0].type == REGISTER)
-  {
-    setRegisterValue(cpu, &operands[0].reg, res);
-    updateFlags(cpu, res);
-  }
-}
-
-void executeInstruction(CPU* cpu, Instruction instruction)
-{
-  switch (instruction.op)
-  {
-  case MOV:
-  {
-    executeMoveInstruction(cpu, instruction.operands);
-    break;
-  }
-  case ADD:
-  {
-    executeAddInstruction(cpu, instruction.operands);
-    break;
-  }
-  case SUB:
-  {
-    executeSubInstruction(cpu, instruction.operands);
-    break;
-  }
-  case CMP:
-  {
-    executeCmpInstruction(cpu, instruction.operands);
-  }
-  default:
-  {
-    printf("\n");
-    break;
-  }
-  }
-}
-
 int main()
 {
   ui8*        buffer;
   ui8*        end;
   int         len;
-  const char* name = "listing_46";
+  const char* name = "t5";
   read_file(&buffer, &len, name);
 
   end = buffer + len;
@@ -918,11 +719,6 @@ int main()
 
   Instruction instructions[256];
   ui16        current = 0;
-
-  ui16        registers[8];
-  CPU         cpu;
-  cpu.registers = &registers[0];
-  cpu.ip        = 0;
 
   while (buffer < end)
   {
@@ -1092,12 +888,7 @@ int main()
       exit(1);
     }
     debugInstruction(instructions[current]);
-    executeInstruction(&cpu, instructions[current]);
-    // debugRegisters(registers);
     current++;
     buffer++;
   }
-  printf("Final stuff:\n");
-  debugRegisters(registers);
-  debugFlags(cpu.flags);
 }
