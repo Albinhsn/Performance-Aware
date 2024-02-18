@@ -2,6 +2,8 @@
 #define COMMON_H
 
 #include <stdint.h>
+#include <sys/time.h>
+#include <x86intrin.h>
 
 typedef uint8_t  u8;
 typedef uint16_t u16;
@@ -15,5 +17,9 @@ typedef int64_t  i64;
 
 typedef float    f32;
 typedef double   f64;
+
+u64              GetOSTimerFreq(void);
+u64              ReadOSTimer(void);
+u64              ReadCPUTimer(void);
 
 #endif

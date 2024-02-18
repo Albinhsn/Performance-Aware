@@ -142,16 +142,20 @@ inline void resizeObject(JsonObject* obj)
     obj->cap    = 4;
     obj->values = (JsonValue**)malloc(sizeof(JsonValue*) * obj->cap);
     obj->keys   = (char**)malloc(sizeof(char*) * obj->cap);
+    for (i32 i = obj->size; i < obj->cap; i++)
+    {
+      obj->values[i] = (JsonValue*)malloc(sizeof(JsonValue));
+    }
   }
   else if (obj->size >= obj->cap)
   {
     obj->cap *= 2;
     obj->values = realloc(obj->values, obj->cap * sizeof(JsonValue));
     obj->keys   = realloc(obj->keys, obj->cap * sizeof(char*));
-  }
-  for (i32 i = obj->size; i < obj->cap; i++)
-  {
-    obj->values[i] = (JsonValue*)malloc(sizeof(JsonValue));
+    for (i32 i = obj->size; i < obj->cap; i++)
+    {
+      obj->values[i] = (JsonValue*)malloc(sizeof(JsonValue));
+    }
   }
 }
 
@@ -336,18 +340,9 @@ f64 parseNumber(Buffer* buffer)
   memcpy(line, &buffer->buffer[start], size);
   line[size] = '\0';
 
-  struct Me
-  {
-    union
-    {
-      f64 x;
-      u64 y;
-    };
-  };
-  struct Me m;
-  m.y = strtoul(line, NULL, 10);
+  u64 x      = strtoul(line, NULL, 10);
 
-  return m.x;
+  return *(f64*)&x;
 }
 bool parseString(char** key, Buffer* buffer)
 {
@@ -362,6 +357,7 @@ bool parseString(char** key, Buffer* buffer)
   (*key)[len] = '\0';
   strncpy(*key, &buffer->buffer[start], len);
   advanceBuffer(buffer);
+
   return true;
 }
 
@@ -498,7 +494,6 @@ bool parseJsonValue(JsonValue* value, Buffer* buffer)
     value->type     = JSON_OBJECT;
     value->obj.cap  = 0;
     value->obj.size = 0;
-
     return parseJsonObject(&value->obj, buffer);
   }
   case '[':
