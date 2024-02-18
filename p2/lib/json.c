@@ -11,9 +11,9 @@
 
 struct Buffer
 {
-  const u8* buffer;
-  u64       curr;
-  u64       len;
+  u8* buffer;
+  u64 curr;
+  u64 len;
 };
 typedef struct Buffer Buffer;
 
@@ -137,21 +137,15 @@ void debugJson(Json* json)
 
 inline void resizeObject(JsonObject* obj)
 {
-  if (obj->cap == 0)
-  {
-    obj->cap    = 4;
-    obj->values = (JsonValue**)malloc(sizeof(JsonValue*) * obj->cap);
-    obj->keys   = (char**)malloc(sizeof(char*) * obj->cap);
-  }
-  else if (obj->size >= obj->cap)
+  if (obj->size >= obj->cap)
   {
     obj->cap *= 2;
     obj->values = realloc(obj->values, obj->cap * sizeof(JsonValue));
     obj->keys   = realloc(obj->keys, obj->cap * sizeof(char*));
-  }
-  for (i32 i = obj->size; i < obj->cap; i++)
-  {
-    obj->values[i] = (JsonValue*)malloc(sizeof(JsonValue));
+    for (i32 i = obj->size; i < obj->cap; i++)
+    {
+      obj->values[i] = (JsonValue*)malloc(sizeof(JsonValue));
+    }
   }
 }
 
@@ -194,6 +188,10 @@ void initJsonObject(JsonObject* obj)
   obj->cap    = 4;
   obj->values = (JsonValue**)malloc(sizeof(JsonValue*) * obj->cap);
   obj->keys   = (char**)malloc(sizeof(char*) * obj->cap);
+  for (i32 i = obj->size; i < obj->cap; i++)
+  {
+    obj->values[i] = (JsonValue*)malloc(sizeof(JsonValue));
+  }
 }
 
 void serializeJsonValue(JsonValue* value, FILE* filePtr);
@@ -331,23 +329,14 @@ f64 parseNumber(Buffer* buffer)
     }
   }
 
-  u64  size = buffer->curr - start;
-  char line[size + 1];
-  memcpy(line, &buffer->buffer[start], size);
-  line[size] = '\0';
+  u64  size                    = buffer->curr - start;
+  char prev                    = buffer->buffer[start + size];
+  buffer->buffer[start + size] = '\0';
 
-  struct Me
-  {
-    union
-    {
-      f64 x;
-      u64 y;
-    };
-  };
-  struct Me m;
-  m.y = strtoul(line, NULL, 10);
+  u64 res                      = strtoul(&buffer->buffer[start], NULL, 10);
+  buffer->buffer[start + size] = prev;
 
-  return m.x;
+  return *(f64*)&res;
 }
 bool parseString(char** key, Buffer* buffer)
 {
@@ -495,9 +484,8 @@ bool parseJsonValue(JsonValue* value, Buffer* buffer)
   }
   case '{':
   {
-    value->type     = JSON_OBJECT;
-    value->obj.cap  = 0;
-    value->obj.size = 0;
+    value->type = JSON_OBJECT;
+    initJsonObject(&value->obj);
 
     return parseJsonObject(&value->obj, buffer);
   }
@@ -566,7 +554,7 @@ bool deserializeFromFile(Json* json, const char* filename)
   bool   first = false;
 
   Buffer buffer;
-  buffer.buffer = fileContent.buffer;
+  buffer.buffer = (u8*)fileContent.buffer;
   buffer.curr   = 0;
   buffer.len    = fileContent.len;
 
@@ -577,10 +565,9 @@ bool deserializeFromFile(Json* json, const char* filename)
     case '{':
     {
       json->headType = JSON_OBJECT;
-      json->obj.cap  = 0;
-      json->obj.size = 0;
-      res            = parseJsonObject(&json->obj, &buffer);
-      first          = true;
+      initJsonObject(&json->obj);
+      res   = parseJsonObject(&json->obj, &buffer);
+      first = true;
       break;
     }
     case '[':
