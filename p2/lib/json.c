@@ -1,8 +1,10 @@
 #include "json.h"
+#include "../haversine.h"
 #include "common.h"
 #include "files.h"
 #include <ctype.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define CURRENT_CHAR(buffer, curr) (buffer[*curr])
@@ -16,7 +18,7 @@ void debugJsonValue(JsonValue* value)
   {
   case JSON_OBJECT:
   {
-    debugJsonObject(value->obj);
+    debugJsonObject(&value->obj);
     break;
   }
   case JSON_BOOL:
@@ -43,7 +45,7 @@ void debugJsonValue(JsonValue* value)
   }
   case JSON_ARRAY:
   {
-    debugJsonArray(value->arr);
+    debugJsonArray(&value->arr);
     break;
   }
   case JSON_STRING:
@@ -64,7 +66,7 @@ void debugJsonObject(JsonObject* object)
   for (i32 i = 0; i < object->size; i++)
   {
     printf("\"%s\":", object->keys[i]);
-    debugJsonValue(&object->values[i]);
+    debugJsonValue(object->values[i]);
     if (i != object->size - 1)
     {
       printf(",\n");
@@ -120,7 +122,7 @@ static inline void resizeObject(JsonObject* obj)
   if (obj->cap == 0)
   {
     obj->cap    = 4;
-    obj->values = (JsonValue*)malloc(sizeof(JsonValue) * obj->cap);
+    obj->values = (JsonValue**)malloc(sizeof(JsonValue*) * obj->cap);
     obj->keys   = (char**)malloc(sizeof(char*) * obj->cap);
   }
   else if (obj->size >= obj->cap)
@@ -128,6 +130,10 @@ static inline void resizeObject(JsonObject* obj)
     obj->cap *= 2;
     obj->values = realloc(obj->values, obj->cap * sizeof(JsonValue));
     obj->keys   = realloc(obj->keys, obj->cap * sizeof(char*));
+  }
+  for (i32 i = obj->size; i < obj->cap; i++)
+  {
+    obj->values[i] = (JsonValue*)malloc(sizeof(JsonValue));
   }
 }
 
@@ -145,14 +151,13 @@ static inline void resizeArray(JsonArray* arr)
   }
 }
 
-void addElementToJsonObject(JsonObject* obj, char* key, JsonValue value)
+void addElementToJsonObject(JsonObject* obj, char* key, JsonValue* value)
 {
 
   resizeObject(obj);
   obj->values[obj->size] = value;
   obj->keys[obj->size]   = key;
   obj->size++;
-
 }
 void addElementToJsonArray(JsonArray* array, JsonValue value)
 {
@@ -169,7 +174,7 @@ void initJsonObject(JsonObject* obj)
 {
   obj->size   = 0;
   obj->cap    = 4;
-  obj->values = (JsonValue*)malloc(sizeof(JsonValue) * obj->cap);
+  obj->values = (JsonValue**)malloc(sizeof(JsonValue*) * obj->cap);
   obj->keys   = (char**)malloc(sizeof(char*) * obj->cap);
 }
 
@@ -196,7 +201,7 @@ static void serializeJsonObject(JsonObject* object, FILE* filePtr)
   for (i32 i = 0; i < object->size; i++)
   {
     fprintf(filePtr, "\"%s\":", object->keys[i]);
-    serializeJsonValue(&object->values[i], filePtr);
+    serializeJsonValue(object->values[i], filePtr);
     if (i != object->size - 1)
     {
       fwrite(",", 1, 1, filePtr);
@@ -211,7 +216,7 @@ static void serializeJsonValue(JsonValue* value, FILE* filePtr)
   {
   case JSON_OBJECT:
   {
-    serializeJsonObject(value->obj, filePtr);
+    serializeJsonObject(&value->obj, filePtr);
     break;
   }
   case JSON_BOOL:
@@ -233,12 +238,13 @@ static void serializeJsonValue(JsonValue* value, FILE* filePtr)
   }
   case JSON_NUMBER:
   {
-    fprintf(filePtr, "%lf", value->number);
+    u64 converted = convertMe(value->number);
+    fprintf(filePtr, "%ld", converted);
     break;
   }
   case JSON_ARRAY:
   {
-    serializeJsonArray(value->arr, filePtr);
+    serializeJsonArray(&value->arr, filePtr);
     break;
   }
   case JSON_STRING:
@@ -290,7 +296,7 @@ bool serializeToFile(Json* json, const char* filename)
   return true;
 }
 
-static bool parseNumber(f32* number, char* buffer, u64* curr)
+static bool parseNumber(f64* number, char* buffer, u64* curr)
 {
   u64 start = *curr;
   ADVANCE(curr);
@@ -310,7 +316,7 @@ static bool parseNumber(f32* number, char* buffer, u64* curr)
   u64 size = (*curr) - start;
   strncpy(&line[0], &buffer[start], size);
   line[size] = '\0';
-  *number    = strtof(line, NULL);
+  *number    = convertMeBack(strtoul(line, NULL, 10));
 
   return true;
 }
@@ -358,7 +364,11 @@ bool parseKeyValuePair(JsonObject* obj, char* buffer, u64* curr)
 {
   resizeObject(obj);
 
-  parseString(&obj->keys[obj->size], buffer, curr);
+  bool res = parseString(&obj->keys[obj->size], buffer, curr);
+  if (!res)
+  {
+    return false;
+  }
   *curr += skipWhitespace(&buffer[*curr]);
 
   if (!consumeToken(buffer[*curr], ':', curr))
@@ -366,7 +376,7 @@ bool parseKeyValuePair(JsonObject* obj, char* buffer, u64* curr)
     return false;
   }
 
-  bool res = parseJsonValue(&obj->values[obj->size], buffer, curr);
+  res = parseJsonValue(obj->values[obj->size], buffer, curr);
   if (!res)
   {
     return false;
@@ -443,18 +453,18 @@ bool parseJsonValue(JsonValue* value, char* buffer, u64* curr)
   }
   case '{':
   {
-    value->type      = JSON_OBJECT;
-    value->obj->cap  = 0;
-    value->obj->size = 0;
-    return parseJsonObject(value->obj, buffer, curr);
+    value->type     = JSON_OBJECT;
+    value->obj.cap  = 0;
+    value->obj.size = 0;
+
+    return parseJsonObject(&value->obj, buffer, curr);
   }
   case '[':
   {
-    value->type           = JSON_ARRAY;
-    value->arr            = (JsonArray*)malloc(sizeof(JsonArray));
-    value->arr->arrayCap  = 0;
-    value->arr->arraySize = 0;
-    return parseJsonArray(value->arr, buffer, curr);
+    value->type          = JSON_ARRAY;
+    value->arr.arrayCap  = 0;
+    value->arr.arraySize = 0;
+    return parseJsonArray(&value->arr, buffer, curr);
   }
   case 't':
   {
@@ -507,6 +517,7 @@ bool deserializeFromFile(Json* json, const char* filename)
   result = ah_ReadFile(&fileContent, filename);
   if (!result)
   {
+    printf("Failed to read file\n");
     return false;
   }
   u64  curr = 0;
@@ -557,6 +568,7 @@ bool deserializeFromFile(Json* json, const char* filename)
   }
   if (!res)
   {
+    printf("Failed to parse json value\n");
     return false;
   }
   if (curr != fileContent.len)

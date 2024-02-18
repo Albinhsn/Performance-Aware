@@ -15,31 +15,17 @@ enum JsonType
   JSON_BOOL,
   JSON_NULL
 };
-typedef enum JsonType JsonType;
+typedef enum JsonType     JsonType;
 
-struct JsonValue;
-struct JsonObject;
-struct JsonArray;
-
-struct JsonValue
-{
-  JsonType type;
-  union
-  {
-    struct JsonObject* obj;
-    struct JsonArray*  arr;
-    bool               b;
-    char*              string;
-    float              number;
-  };
-};
-
-typedef struct JsonValue JsonValue;
+typedef struct JsonValue  JsonValue;
+typedef struct JsonValue  JsonValue;
+typedef struct JsonObject JsonObject;
+typedef struct JsonArray  JsonArray;
 
 struct JsonObject
 {
   char**     keys;
-  JsonValue* values;
+  JsonValue** values;
   u64        size;
   u64        cap;
 };
@@ -47,9 +33,22 @@ typedef struct JsonObject JsonObject;
 
 struct JsonArray
 {
-  uint32_t   arraySize;
-  uint32_t   arrayCap;
+  u64 arraySize;
+  u64 arrayCap;
   JsonValue* values;
+};
+
+struct JsonValue
+{
+  JsonType type;
+  union
+  {
+    JsonObject obj;
+    JsonArray  arr;
+    bool       b;
+    char*      string;
+    f64 number;
+  };
 };
 typedef struct JsonArray JsonArray;
 
@@ -65,7 +64,7 @@ struct Json
 };
 typedef struct Json Json;
 
-void                addElementToJsonObject(JsonObject* obj, char* key, JsonValue value);
+void addElementToJsonObject(JsonObject* obj, char* key, JsonValue* value);
 void                addElementToJsonArray(JsonArray* array, JsonValue value);
 void                initJsonArray(JsonArray* array);
 void                initJsonObject(JsonObject* obj);
