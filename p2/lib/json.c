@@ -7,8 +7,26 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define CURRENT_CHAR(buffer, curr) (buffer[*curr])
-#define ADVANCE(curr)              ((*curr)++)
+#define ADVANCE(curr) ((*curr)++)
+
+struct Buffer
+{
+  const u8* buffer;
+  u64       curr;
+  u64       len;
+};
+typedef struct Buffer Buffer;
+
+static inline u8      getCurrentCharBuffer(Buffer* buffer)
+{
+  return buffer->buffer[buffer->curr];
+}
+
+static inline void advanceBuffer(Buffer* buffer)
+{
+  buffer->curr++;
+}
+
 void debugJsonObject(JsonObject* object);
 void debugJsonArray(JsonArray* arr);
 
@@ -117,7 +135,7 @@ void debugJson(Json* json)
   printf("\n");
 }
 
-static inline void resizeObject(JsonObject* obj)
+inline void resizeObject(JsonObject* obj)
 {
   if (obj->cap == 0)
   {
@@ -137,7 +155,7 @@ static inline void resizeObject(JsonObject* obj)
   }
 }
 
-static inline void resizeArray(JsonArray* arr)
+inline void resizeArray(JsonArray* arr)
 {
   if (arr->arraySize == 0)
   {
@@ -178,10 +196,10 @@ void initJsonObject(JsonObject* obj)
   obj->keys   = (char**)malloc(sizeof(char*) * obj->cap);
 }
 
-static void serializeJsonValue(JsonValue* value, FILE* filePtr);
-static void serializeJsonObject(JsonObject* object, FILE* filePtr);
+void serializeJsonValue(JsonValue* value, FILE* filePtr);
+void serializeJsonObject(JsonObject* object, FILE* filePtr);
 
-static void serializeJsonArray(JsonArray* arr, FILE* filePtr)
+void serializeJsonArray(JsonArray* arr, FILE* filePtr)
 {
   fwrite("[", 1, 1, filePtr);
   for (i32 i = 0; i < arr->arraySize; i++)
@@ -195,7 +213,7 @@ static void serializeJsonArray(JsonArray* arr, FILE* filePtr)
   fwrite("]", 1, 1, filePtr);
 }
 
-static void serializeJsonObject(JsonObject* object, FILE* filePtr)
+void serializeJsonObject(JsonObject* object, FILE* filePtr)
 {
   fwrite("{", 1, 1, filePtr);
   for (i32 i = 0; i < object->size; i++)
@@ -210,7 +228,7 @@ static void serializeJsonObject(JsonObject* object, FILE* filePtr)
   fwrite("}", 1, 1, filePtr);
 }
 
-static void serializeJsonValue(JsonValue* value, FILE* filePtr)
+void serializeJsonValue(JsonValue* value, FILE* filePtr)
 {
   switch (value->type)
   {
@@ -296,160 +314,184 @@ bool serializeToFile(Json* json, const char* filename)
   return true;
 }
 
-static bool parseNumber(f64* number, char* buffer, u64* curr)
+f64 parseNumber(Buffer* buffer)
 {
-  u64 start = *curr;
-  ADVANCE(curr);
-  char line[32];
-  while (isdigit(CURRENT_CHAR(buffer, curr)))
+  u64 start = buffer->curr;
+  advanceBuffer(buffer);
+  while (isdigit(getCurrentCharBuffer(buffer)))
   {
-    ADVANCE(curr);
+    advanceBuffer(buffer);
   }
-  if (CURRENT_CHAR(buffer, curr) == '.')
+  if (getCurrentCharBuffer(buffer) == '.')
   {
-    ADVANCE(curr);
-    while (isdigit(CURRENT_CHAR(buffer, curr)))
+    advanceBuffer(buffer);
+    while (isdigit(getCurrentCharBuffer(buffer)))
     {
-      ADVANCE(curr);
+      advanceBuffer(buffer);
     }
   }
-  u64 size = (*curr) - start;
-  strncpy(&line[0], &buffer[start], size);
-  line[size] = '\0';
-  *number    = convertMeBack(strtoul(line, NULL, 10));
 
-  return true;
-}
-static bool parseString(char** key, char* buffer, u64* curr)
-{
-  ADVANCE(curr);
-  u64 start = *curr;
-  while (buffer[*curr] != '"')
+  u64  size = buffer->curr - start;
+  char line[size + 1];
+  memcpy(line, &buffer->buffer[start], size);
+  line[size] = '\0';
+
+  struct Me
   {
-    (*curr)++;
+    union
+    {
+      f64 x;
+      u64 y;
+    };
+  };
+  struct Me m;
+  m.y = strtoul(line, NULL, 10);
+
+  return m.x;
+}
+bool parseString(char** key, Buffer* buffer)
+{
+  advanceBuffer(buffer);
+  u64 start = buffer->curr;
+  while (getCurrentCharBuffer(buffer) != '"')
+  {
+    advanceBuffer(buffer);
   }
-  u64 len     = ((*curr) - start);
+  u64 len     = buffer->curr - start;
   *key        = (char*)malloc(sizeof(char) * (1 + len));
   (*key)[len] = '\0';
-  strncpy(*key, &buffer[start], len);
-  (*curr)++;
+  strncpy(*key, &buffer->buffer[start], len);
+  advanceBuffer(buffer);
   return true;
 }
 
-static u64 skipWhitespace(char* buffer)
+static inline void skipWhitespace(Buffer* buffer)
 {
-  u64 res = 0;
-  while (buffer[res] == ' ' || buffer[res] == '\n')
+  while (getCurrentCharBuffer(buffer) == ' ' || getCurrentCharBuffer(buffer) == '\n')
   {
-    res++;
+    advanceBuffer(buffer);
   }
-  return res;
 }
 
-static bool consumeToken(char got, char expected, u64* curr)
+bool consumeToken(Buffer* buffer, char expected)
 {
-  if (expected != got)
+  if (expected != getCurrentCharBuffer(buffer))
   {
-    printf("Expected '%c' but got '%c'\n", expected, got);
+    printf("Expected '%c' but got '%c'\n", expected, getCurrentCharBuffer(buffer));
     return false;
   }
-  (*curr)++;
+  advanceBuffer(buffer);
   return true;
 }
 
-bool parseJsonValue(JsonValue* value, char* buffer, u64* curr);
-bool parseJsonArray(JsonArray* arr, char* buffer, u64* curr);
+bool parseJsonValue(JsonValue* value, Buffer* buffer);
+bool parseJsonArray(JsonArray* arr, Buffer* buffer);
 
-bool parseKeyValuePair(JsonObject* obj, char* buffer, u64* curr)
+bool parseKeyValuePair(JsonObject* obj, Buffer* buffer)
 {
   resizeObject(obj);
 
-  bool res = parseString(&obj->keys[obj->size], buffer, curr);
+  bool res = parseString(&obj->keys[obj->size], buffer);
   if (!res)
   {
     return false;
   }
-  *curr += skipWhitespace(&buffer[*curr]);
+  skipWhitespace(buffer);
 
-  if (!consumeToken(buffer[*curr], ':', curr))
+  if (!consumeToken(buffer, ':'))
   {
     return false;
   }
 
-  res = parseJsonValue(obj->values[obj->size], buffer, curr);
+  res = parseJsonValue(obj->values[obj->size], buffer);
   if (!res)
   {
     return false;
   }
   obj->size++;
 
-  *curr += skipWhitespace(&buffer[*curr]);
+  skipWhitespace(buffer);
   return true;
 }
 
-bool parseJsonObject(JsonObject* obj, char* buffer, u64* curr)
+bool parseJsonObject(JsonObject* obj, Buffer* buffer)
 {
-  ADVANCE(curr);
-  (*curr) = *curr + skipWhitespace(&buffer[*curr]);
+  advanceBuffer(buffer);
+  skipWhitespace(buffer);
+
   // end or string
-  while (buffer[*curr] != '}')
+  while (getCurrentCharBuffer(buffer) != '}')
   {
-    bool res = parseKeyValuePair(obj, buffer, curr);
+    bool res = parseKeyValuePair(obj, buffer);
     if (!res)
     {
+      printf("Failed to parse key value pair\n");
       return false;
     }
 
-    (*curr) += skipWhitespace(&buffer[*curr]);
-    if (buffer[*curr] == ',')
+    skipWhitespace(buffer);
+    if (getCurrentCharBuffer(buffer) == ',')
     {
-      // It's illegal to have a ',' and then end it
-      ADVANCE(curr);
+      advanceBuffer(buffer);
     }
-    (*curr) += skipWhitespace(&buffer[*curr]);
+    skipWhitespace(buffer);
   }
-  ADVANCE(curr);
+  advanceBuffer(buffer);
   return true;
 }
 
-bool parseJsonArray(JsonArray* arr, char* buffer, u64* curr)
+bool parseJsonArray(JsonArray* arr, Buffer* buffer)
 {
-  (*curr)++;
-  *curr += skipWhitespace(&buffer[*curr]);
+  advanceBuffer(buffer);
+  skipWhitespace(buffer);
   bool res;
-  while (buffer[*curr] != ']')
+  while (getCurrentCharBuffer(buffer) != ']')
   {
     resizeArray(arr);
-    res = parseJsonValue(&arr->values[arr->arraySize], buffer, curr);
+    res = parseJsonValue(&arr->values[arr->arraySize], buffer);
     if (!res)
     {
       return false;
     }
     arr->arraySize++;
-    *curr += skipWhitespace(&buffer[*curr]);
-    if (buffer[*curr] == ',')
+    skipWhitespace(buffer);
+    if (getCurrentCharBuffer(buffer) == ',')
     {
-      ADVANCE(curr);
+      advanceBuffer(buffer);
     }
   }
-  ADVANCE(curr);
+  advanceBuffer(buffer);
 
   return true;
 }
-bool parseJsonValue(JsonValue* value, char* buffer, u64* curr)
+bool parseKeyword(Buffer* buffer, char* expected, u8 len)
 {
-  *curr += skipWhitespace(&buffer[*curr]);
-  if (isdigit(buffer[*curr]) || buffer[*curr] == '-')
+  for (i32 i = 0; i < len; i++)
   {
-    value->type = JSON_NUMBER;
-    return parseNumber(&value->number, buffer, curr);
+    if (buffer->buffer[buffer->curr + 1 + i] != expected[i])
+    {
+      return false;
+    }
   }
-  switch (buffer[*curr])
+  return true;
+}
+
+bool parseJsonValue(JsonValue* value, Buffer* buffer)
+{
+  char currentChar = getCurrentCharBuffer(buffer);
+  if (isdigit(currentChar) || currentChar == '-')
+  {
+    value->type   = JSON_NUMBER;
+    value->number = parseNumber(buffer);
+    return true;
+  }
+
+  switch (currentChar)
   {
   case '\"':
   {
     value->type = JSON_STRING;
-    return parseString(&value->string, buffer, curr);
+    return parseString(&value->string, buffer);
   }
   case '{':
   {
@@ -457,22 +499,22 @@ bool parseJsonValue(JsonValue* value, char* buffer, u64* curr)
     value->obj.cap  = 0;
     value->obj.size = 0;
 
-    return parseJsonObject(&value->obj, buffer, curr);
+    return parseJsonObject(&value->obj, buffer);
   }
   case '[':
   {
     value->type          = JSON_ARRAY;
     value->arr.arrayCap  = 0;
     value->arr.arraySize = 0;
-    return parseJsonArray(&value->arr, buffer, curr);
+    return parseJsonArray(&value->arr, buffer);
   }
   case 't':
   {
-    if (buffer[*curr + 1] == 'r' && buffer[*curr + 2] == 'u' && buffer[*curr + 3] == 'e')
+    if (parseKeyword(buffer, "rue", 3))
     {
       value->type = JSON_BOOL;
       value->b    = true;
-      (*curr) += 4;
+      buffer->curr += 4;
       return true;
     }
     printf("Got 't' but wasn't true?\n");
@@ -480,11 +522,11 @@ bool parseJsonValue(JsonValue* value, char* buffer, u64* curr)
   }
   case 'f':
   {
-    if (buffer[*curr + 1] == 'a' && buffer[*curr + 2] == 'l' && buffer[*curr + 3] == 's' && buffer[*curr + 4] == 'e')
+    if (parseKeyword(buffer, "alse", 4))
     {
       value->type = JSON_BOOL;
       value->b    = false;
-      (*curr) += 5;
+      buffer->curr += 5;
       return true;
     }
     printf("Got 'f' but wasn't false?\n");
@@ -492,10 +534,10 @@ bool parseJsonValue(JsonValue* value, char* buffer, u64* curr)
   }
   case 'n':
   {
-    if (buffer[*curr + 1] == 'u' && buffer[*curr + 2] == 'l' && buffer[*curr + 3] == 'l')
+    if (parseKeyword(buffer, "ull", 3))
     {
       value->type = JSON_NULL;
-      (*curr) += 4;
+      buffer->curr += 4;
       return true;
     }
     printf("Got 'n' but wasn't null?\n");
@@ -503,7 +545,7 @@ bool parseJsonValue(JsonValue* value, char* buffer, u64* curr)
   }
   default:
   {
-    printf("Unknown value token '%c'\n", buffer[*curr]);
+    printf("Unknown value token '%c'\n", currentChar);
     return false;
   }
   }
@@ -520,19 +562,24 @@ bool deserializeFromFile(Json* json, const char* filename)
     printf("Failed to read file\n");
     return false;
   }
-  u64  curr = 0;
-  bool res;
-  bool first = false;
+  bool   res;
+  bool   first = false;
+
+  Buffer buffer;
+  buffer.buffer = fileContent.buffer;
+  buffer.curr   = 0;
+  buffer.len    = fileContent.len;
+
   while (!first)
   {
-    switch (fileContent.buffer[curr])
+    switch (getCurrentCharBuffer(&buffer))
     {
     case '{':
     {
       json->headType = JSON_OBJECT;
       json->obj.cap  = 0;
       json->obj.size = 0;
-      res            = parseJsonObject(&json->obj, fileContent.buffer, &curr);
+      res            = parseJsonObject(&json->obj, &buffer);
       first          = true;
       break;
     }
@@ -541,7 +588,7 @@ bool deserializeFromFile(Json* json, const char* filename)
       json->headType        = JSON_ARRAY;
       json->array.arrayCap  = 0;
       json->array.arraySize = 0;
-      res                   = parseJsonArray(&json->array, fileContent.buffer, &curr);
+      res                   = parseJsonArray(&json->array, &buffer);
       first                 = true;
       break;
     }
@@ -553,14 +600,14 @@ bool deserializeFromFile(Json* json, const char* filename)
     }
     case '\t':
     {
-      curr++;
+      advanceBuffer(&buffer);
       break;
     }
     default:
     {
-      printf("Default: %c\n", fileContent.buffer[curr]);
+      printf("Default: %c\n", getCurrentCharBuffer(&buffer));
       json->headType = JSON_VALUE;
-      res            = parseJsonValue(&json->value, fileContent.buffer, &curr);
+      res            = parseJsonValue(&json->value, &buffer);
       first          = true;
       break;
     }
@@ -568,12 +615,12 @@ bool deserializeFromFile(Json* json, const char* filename)
   }
   if (!res)
   {
-    printf("Failed to parse json value\n");
+    printf("Failed to parse something\n");
     return false;
   }
-  if (curr != fileContent.len)
+  if (buffer.curr != fileContent.len)
   {
-    printf("Didn't reach eof after parsing first value? %ld %ld\n", curr, fileContent.len);
+    printf("Didn't reach eof after parsing first value? %ld %ld\n", buffer.curr, fileContent.len);
     return false;
   }
   return true;
