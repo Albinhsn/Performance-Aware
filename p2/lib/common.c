@@ -1,11 +1,12 @@
 #include "common.h"
+#include <stdio.h>
 
-u64 GetOSTimerFreq(void)
+static u64 GetOSTimerFreq(void)
 {
   return 1000000;
 }
 
-u64 ReadOSTimer(void)
+static u64 ReadOSTimer(void)
 {
   // NOTE(casey): The "struct" keyword is not necessary here when compiling in C++,
   // but just in case anyone is using this file from C, I include it.
@@ -27,4 +28,31 @@ u64 ReadCPUTimer(void)
   // on which ones are available on your platform.
 
   return __rdtsc();
+}
+
+#define TIME_TO_WAIT 100
+
+u64 EstimateCPUTimerFreq(void)
+{
+  u64 OSFreq    = GetOSTimerFreq();
+
+  u64 CPUStart  = ReadCPUTimer();
+  u64 OSStart   = ReadOSTimer();
+  u64 OSElapsed = 0;
+  u64 OSEnd     = 0;
+  u64 OSWaitTime = OSFreq * TIME_TO_WAIT / 1000;
+  while (OSElapsed < OSWaitTime)
+  {
+    OSEnd     = ReadOSTimer();
+    OSElapsed = OSEnd - OSStart;
+  }
+
+  u64 CPUEnd     = ReadCPUTimer();
+  u64 CPUElapsed = CPUEnd - CPUStart;
+  printf("   OS Timer: %lu -> %lu = %lu elapsed\n", OSStart, OSEnd, OSElapsed);
+  printf(" OS Seconds: %.4f\n", (f64)OSElapsed / (f64)OSFreq);
+
+  printf("  CPU Timer: %lu -> %lu = %lu elapsed\n", CPUStart, CPUEnd, CPUElapsed);
+
+  return OSFreq * CPUElapsed / OSElapsed;
 }

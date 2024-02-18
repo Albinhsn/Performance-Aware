@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include <stdbool.h>
+#include "string.h"
 #include <stdint.h>
 
 enum JsonType
@@ -68,7 +69,7 @@ void addElementToJsonObject(JsonObject* obj, char* key, JsonValue* value);
 void                addElementToJsonArray(JsonArray* array, JsonValue value);
 void                initJsonArray(JsonArray* array);
 void                initJsonObject(JsonObject* obj);
-bool                deserializeFromFile(Json* json, const char* filename);
+bool deserializeFromFile(Json* json, String fileContent);
 bool                serializeToFile(Json* json, const char* filename);
 void                debugJson(Json* json);
 

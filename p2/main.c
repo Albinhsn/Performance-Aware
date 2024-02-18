@@ -3,29 +3,62 @@
 #include "./lib/json.h"
 #include "haversine.h"
 
-void solve()
+void solve(u64 cpuFreq)
 {
-  Json json;
-  deserializeFromFile(&json, "./data/haversine10mil_02.json");
+}
+
+static void PrintTimeElapsed(char const* Label, u64 TotalTSCElapsed, u64 Begin, u64 End)
+{
+  u64 Elapsed = End - Begin;
+  f64 Percent = 100.0 * ((f64)Elapsed / (f64)TotalTSCElapsed);
+  printf("  %s: %lu (%.2f%%)\n", Label, Elapsed, Percent);
+}
+
+int main()
+{
+  u64    Prof_Begin      = 0;
+  u64    Prof_Read       = 0;
+  u64    Prof_MiscSetup  = 0;
+  u64    Prof_Parse      = 0;
+  u64    Prof_Sum        = 0;
+  u64    Prof_MiscOutput = 0;
+  u64    Prof_End        = 0;
+
+  Json   json;
+  String fileContent;
+  bool   result;
+
+  Prof_Begin = ReadCPUTimer();
+  result     = ah_ReadFile(&fileContent, "./data/haversine10mil_02.json");
+  if (!result)
+  {
+    printf("Failed to read file\n");
+    return false;
+  }
+  Prof_Read = ReadCPUTimer();
+  deserializeFromFile(&json, fileContent);
+  Prof_Parse = ReadCPUTimer();
+
   String string;
   bool   res = ah_ReadFile(&string, "./data/haversine10milSum_02.txt");
   if (!res)
   {
     printf("Failed to read file\n");
-    return;
+    return 1;
   }
 
   f64 expected = strtod(string.buffer, NULL);
   // printf("Got expected %lf\n", expected);
 
-  f64       sum   = 0;
-  JsonArray array = json.obj.values[0]->arr;
-  u64       size  = array.arraySize;
+  f64        sum    = 0;
+  JsonArray  array  = json.obj.values[0]->arr;
+  u64        size   = array.arraySize;
+  JsonValue* values = array.values;
   // printf("Size was %ld\n", size);
-
+  Prof_MiscSetup = ReadCPUTimer();
   for (u64 i = 0; i < size; i++)
   {
-    JsonObject obj = array.values[i].obj;
+    JsonObject obj = values[i].obj;
 
     f64        x0  = obj.values[0]->number;
     f64        y0  = obj.values[1]->number;
@@ -34,32 +67,27 @@ void solve()
     sum += referenceHaversine(x0, y0, x1, y1);
   }
   sum /= size;
-  // printf("Pair count: %ld\n", size);
-  // printf("Calculated sum: %lf\n", sum);
+  Prof_Sum = ReadCPUTimer();
+  printf("Pair count: %ld\n", size);
+  printf("Calculated sum: %lf\n", sum);
 
-  // printf("Expected %lf\n", expected);
+  printf("Expected %lf\n", expected);
   printf("Difference %lf\n", expected - sum);
-}
+  Prof_End            = ReadCPUTimer();
 
-int main()
-{
-  u64 OSFreq = GetOSTimerFreq();
-  printf("    OS Freq: %lu\n", OSFreq);
+  u64 TotalCPUElapsed = Prof_End - Prof_Begin;
 
-  u64 CPUStart  = ReadCPUTimer();
-  u64 OSStart   = ReadOSTimer();
-  u64 OSEnd     = 0;
-  u64 OSElapsed = 0;
-  OSEnd         = ReadOSTimer();
-  solve();
+  u64 CPUFreq         = EstimateCPUTimerFreq();
+  if (CPUFreq)
+  {
+    printf("\nTotal time: %0.4fms (CPU freq %lu)\n", 1000.0 * (f64)TotalCPUElapsed / (f64)CPUFreq, CPUFreq);
+  }
 
-  u64 CPUEnd     = ReadCPUTimer();
-  u64 CPUElapsed = CPUEnd - CPUStart;
-
-  printf("   OS Timer: %lu -> %lu = %lu elapsed\n", OSStart, OSEnd, OSElapsed);
-  printf(" OS Seconds: %.4f\n", (f64)OSElapsed / (f64)OSFreq);
-
-  printf("  CPU Timer: %lu -> %lu = %lu elapsed\n", CPUStart, CPUEnd, CPUElapsed);
+  PrintTimeElapsed("Reading", TotalCPUElapsed, Prof_Begin, Prof_Read);
+  PrintTimeElapsed("Parsing", TotalCPUElapsed, Prof_Read, Prof_Parse);
+  PrintTimeElapsed("MiscSetup", TotalCPUElapsed, Prof_Parse, Prof_MiscSetup);
+  PrintTimeElapsed("Sum", TotalCPUElapsed, Prof_MiscSetup, Prof_Sum);
+  PrintTimeElapsed("MiscOutput", TotalCPUElapsed, Prof_Sum, Prof_End);
 
   return 0;
 }

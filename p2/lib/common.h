@@ -18,8 +18,7 @@ typedef int64_t  i64;
 typedef float    f32;
 typedef double   f64;
 
-u64              GetOSTimerFreq(void);
-u64              ReadOSTimer(void);
 u64              ReadCPUTimer(void);
+u64              EstimateCPUTimerFreq(void);
 
 #endif

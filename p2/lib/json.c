@@ -151,12 +151,7 @@ inline void resizeObject(JsonObject* obj)
 
 inline void resizeArray(JsonArray* arr)
 {
-  if (arr->arraySize == 0)
-  {
-    arr->arrayCap = 4;
-    arr->values   = (JsonValue*)malloc(sizeof(JsonValue) * arr->arrayCap);
-  }
-  else if (arr->arraySize >= arr->arrayCap)
+  if (arr->arraySize >= arr->arrayCap)
   {
     arr->arrayCap *= 2;
     arr->values = realloc(arr->values, arr->arrayCap * sizeof(JsonValue));
@@ -491,9 +486,8 @@ bool parseJsonValue(JsonValue* value, Buffer* buffer)
   }
   case '[':
   {
-    value->type          = JSON_ARRAY;
-    value->arr.arrayCap  = 0;
-    value->arr.arraySize = 0;
+    value->type = JSON_ARRAY;
+    initJsonArray(&value->arr);
     return parseJsonArray(&value->arr, buffer);
   }
   case 't':
@@ -539,17 +533,8 @@ bool parseJsonValue(JsonValue* value, Buffer* buffer)
   }
 }
 
-bool deserializeFromFile(Json* json, const char* filename)
+bool deserializeFromFile(Json* json, String fileContent)
 {
-  String fileContent;
-  bool   result;
-
-  result = ah_ReadFile(&fileContent, filename);
-  if (!result)
-  {
-    printf("Failed to read file\n");
-    return false;
-  }
   bool   res;
   bool   first = false;
 
@@ -572,11 +557,10 @@ bool deserializeFromFile(Json* json, const char* filename)
     }
     case '[':
     {
-      json->headType        = JSON_ARRAY;
-      json->array.arrayCap  = 0;
-      json->array.arraySize = 0;
-      res                   = parseJsonArray(&json->array, &buffer);
-      first                 = true;
+      json->headType = JSON_ARRAY;
+      initJsonArray(&json->array);
+      res   = parseJsonArray(&json->array, &buffer);
+      first = true;
       break;
     }
     case ' ':
