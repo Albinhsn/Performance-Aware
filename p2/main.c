@@ -75,28 +75,28 @@ static inline f64 createAndAddRandomClusterValue(JsonObject* jsonObj, char* name
 
 static f64 addClusterCoordinates(JsonArray* array, i64 size)
 {
-  f64 yOffset  = 0;
-  f64 xOffset  = 0;
+  f64         yOffset  = 5;
+  f64         xOffset  = 10;
 
-  f64 x0Offset = generateRandomXCoordinate(xOffset);
-  f64 x1Offset = generateRandomXCoordinate(xOffset);
-  f64 y0Offset = generateRandomYCoordinate(yOffset);
-  f64 y1Offset = generateRandomYCoordinate(yOffset);
+  f64         x0Offset = generateRandomXCoordinate(xOffset);
+  f64         x1Offset = generateRandomXCoordinate(xOffset);
+  f64         y0Offset = generateRandomYCoordinate(yOffset);
+  f64         y1Offset = generateRandomYCoordinate(yOffset);
 
-  f64 sum      = 0;
+  f64         sum      = 0;
+  JsonObject* jsonObjs = (JsonObject*)malloc(sizeof(JsonObject) * size);
   for (i64 i = 0; i < size; i++)
   {
     JsonValue value;
-    value.type          = JSON_OBJECT;
-    JsonObject* jsonObj = (JsonObject*)malloc(sizeof(JsonObject));
-    value.obj           = jsonObj;
+    value.type = JSON_OBJECT;
+    value.obj  = &jsonObjs[i];
 
-    initJsonObject(jsonObj);
+    initJsonObject(value.obj);
 
-    f64 x0 = createAndAddRandomClusterValue(jsonObj, "x0", xOffset, x0Offset);
-    f64 y0 = createAndAddRandomClusterValue(jsonObj, "y0", yOffset, y0Offset);
-    f64 x1 = createAndAddRandomClusterValue(jsonObj, "x1", xOffset, x1Offset);
-    f64 y1 = createAndAddRandomClusterValue(jsonObj, "y1", yOffset, y1Offset);
+    f64 x0 = createAndAddRandomClusterValue(value.obj, "x0", xOffset, x0Offset);
+    f64 y0 = createAndAddRandomClusterValue(value.obj, "y0", yOffset, y0Offset);
+    f64 x1 = createAndAddRandomClusterValue(value.obj, "x1", xOffset, x1Offset);
+    f64 y1 = createAndAddRandomClusterValue(value.obj, "y1", yOffset, y1Offset);
 
     sum += referenceHaversine(x0, y0, x1, y1);
   }
@@ -179,7 +179,7 @@ int main(int argc, char* argv[])
   }
   else
   {
-    i32 clusters    = 10;
+    i32 clusters    = 5;
     i32 clusterSize = samples / clusters;
     for (i64 i = 0; i < clusters; i++)
     {
