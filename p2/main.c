@@ -16,12 +16,12 @@ void solve()
   }
 
   f64 expected = strtod(string.buffer, NULL);
-  printf("Got expected %lf\n", expected);
+  // printf("Got expected %lf\n", expected);
 
   f64       sum   = 0;
   JsonArray array = json.obj.values[0]->arr;
   u64       size  = array.arraySize;
-  printf("Size was %ld\n", size);
+  // printf("Size was %ld\n", size);
 
   for (u64 i = 0; i < size; i++)
   {
@@ -34,10 +34,10 @@ void solve()
     sum += referenceHaversine(x0, y0, x1, y1);
   }
   sum /= size;
-  printf("Pair count: %ld\n", size);
-  printf("Calculated sum: %lf\n", sum);
+  // printf("Pair count: %ld\n", size);
+  // printf("Calculated sum: %lf\n", sum);
 
-  printf("Expected %lf\n", expected);
+  // printf("Expected %lf\n", expected);
   printf("Difference %lf\n", expected - sum);
 }
 
@@ -46,11 +46,11 @@ int main()
   u64 OSFreq = GetOSTimerFreq();
   printf("    OS Freq: %lu\n", OSFreq);
 
-  u64 CPUStart   = ReadCPUTimer();
-  u64 OSStart    = ReadOSTimer();
-  u64 OSEnd      = 0;
-  u64 OSElapsed  = 0;
-  OSEnd          = ReadOSTimer();
+  u64 CPUStart  = ReadCPUTimer();
+  u64 OSStart   = ReadOSTimer();
+  u64 OSEnd     = 0;
+  u64 OSElapsed = 0;
+  OSEnd         = ReadOSTimer();
   solve();
 
   u64 CPUEnd     = ReadCPUTimer();
