@@ -451,7 +451,7 @@ bool parseJsonArray(JsonArray* arr, Buffer* buffer)
 
   return true;
 }
-bool parseKeyword(Buffer* buffer, char* expected, u8 len)
+bool parseKeyword(Buffer* buffer, const char* expected, u8 len)
 {
   for (i32 i = 0; i < len; i++)
   {

@@ -1,12 +1,20 @@
 #include "common.h"
 #include <stdio.h>
 
-Profiler profiler;
+Profiler    profiler;
+u32         profilerParent = 0;
 
 static void PrintTimeElapsed(Profile* profile, u64 TotalTSCElapsed)
 {
-  f64 Percent = 100.0 * ((f64)profile->timeElapsed / (f64)TotalTSCElapsed);
-  printf("  %s: %lu (%.2f%%)\n", profile->name, profile->timeElapsed, Percent);
+  u64 elapsed = profile->timeElapsed - profile->timeElapsedChildren;
+  f64 Percent = 100.0 * ((f64)elapsed / (f64)TotalTSCElapsed);
+  printf("  %s[%lu]: %lu (%.2f%%", profile->name, profile->hitCount, elapsed, Percent);
+  if (profile->timeElapsedRoot != elapsed)
+  {
+    f64 percentWithChildren = 100.0 * ((f64)profile->timeElapsedRoot / TotalTSCElapsed);
+    printf(", %.2f%% w/children", percentWithChildren);
+  }
+  printf(")\n");
 }
 static u64 GetOSTimerFreq(void)
 {
@@ -63,7 +71,7 @@ u64 EstimateCPUTimerFreq(void)
 void initProfiler()
 {
   profiler.timeStart = ReadCPUTimer();
-  profiler.count = 0;
+  profiler.count     = 1;
 }
 
 void displayProfilingResult()
@@ -72,6 +80,7 @@ void displayProfilingResult()
   u64 totalElapsed = endTime - profiler.timeStart;
   u64 cpuFreq      = EstimateCPUTimerFreq();
 
+  printf("\nTotal time: %0.4fms (CPU freq %lu)\n", 1000.0 * (f64)totalElapsed / (f64)cpuFreq, cpuFreq);
   for (u32 i = 0; i < 5; i++)
   {
     Profile* profile = profiler.profiles + i;

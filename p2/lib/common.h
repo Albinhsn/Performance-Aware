@@ -28,6 +28,8 @@ u64              EstimateCPUTimerFreq(void);
 struct Profile
 {
   u64         timeElapsed;
+  u64         timeElapsedChildren;
+  u64         timeElapsedRoot;
   u64         hitCount;
   const char* name;
 };
@@ -39,6 +41,7 @@ struct Profiler
   u64     timeStart;
 };
 extern Profiler profiler;
+extern u32      profilerParent;
 
 void            initProfiler();
 void            atExit(int* really);
@@ -48,23 +51,41 @@ struct ProfileBlock
 {
   const char* name;
   u64         timeStart;
+  u64         oldElapsedAtRoot;
   u32         index;
+  u32         parentIndex;
 
   ProfileBlock(const char* name_)
   {
-    name      = name_;
-    timeStart = ReadCPUTimer();
-    index     = profiler.count;
+    parentIndex    = profilerParent;
+
+    index          = profiler.count;
+    name = name_;
+
+    Profile * profile = profiler.profiles + index;
+    oldElapsedAtRoot = profile->timeElapsedRoot;
+
+    profilerParent = index;
     profiler.count++;
+
+    timeStart      = ReadCPUTimer();
   }
 
   ~ProfileBlock()
   {
     u64      elapsed = ReadCPUTimer() - timeStart;
+    profilerParent = parentIndex;
+
     Profile* profile = profiler.profiles + index;
-    profile->name    = name;
-    profile->hitCount++;
+    Profile* parent  = profiler.profiles + parentIndex;
+
+    parent->timeElapsedChildren += elapsed;
+
+    profile->timeElapsedRoot = oldElapsedAtRoot + elapsed;
     profile->timeElapsed += elapsed;
+    profile->hitCount++;
+
+    profile->name = name;
   }
 };
 
