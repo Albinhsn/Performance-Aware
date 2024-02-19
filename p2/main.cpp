@@ -5,9 +5,6 @@
 #include <stdlib.h>
 #include <time.h>
 
-
-
-
 int main()
 {
   initProfiler();
@@ -20,7 +17,7 @@ int main()
   if (!result)
   {
     printf("Failed to read file\n");
-    return false;
+    return 1;
   }
   deserializeFromString(&json, fileContent);
 
@@ -42,16 +39,16 @@ int main()
   // printf("Size was %ld\n", size);
   {
     TimeBlock("Sum");
-  for (u64 i = 0; i < size; i++)
-  {
-    JsonObject obj = values[i].obj;
+    for (u64 i = 0; i < size; i++)
+    {
+      JsonObject obj = values[i].obj;
 
-    f64        x0  = obj.values[0]->number;
-    f64        y0  = obj.values[1]->number;
-    f64        x1  = obj.values[2]->number;
-    f64        y1  = obj.values[3]->number;
-    sum += referenceHaversine(x0, y0, x1, y1);
-  }
+      f64        x0  = obj.values[0]->number;
+      f64        y0  = obj.values[1]->number;
+      f64        x1  = obj.values[2]->number;
+      f64        y1  = obj.values[3]->number;
+      sum += referenceHaversine(x0, y0, x1, y1);
+    }
   }
   sum /= size;
   printf("Pair count: %ld\n", size);
@@ -61,6 +58,5 @@ int main()
   printf("Difference %lf\n", expected - sum);
 
   displayProfilingResult();
-
   return 0;
 }

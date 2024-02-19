@@ -2,10 +2,10 @@
 #include "../haversine.h"
 #include "common.h"
 #include "files.h"
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <ctype.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #define ADVANCE(curr) ((*curr)++)
 
@@ -140,8 +140,8 @@ inline void resizeObject(JsonObject* obj)
   if (obj->size >= obj->cap)
   {
     obj->cap *= 2;
-    obj->values = realloc(obj->values, obj->cap * sizeof(JsonValue));
-    obj->keys   = realloc(obj->keys, obj->cap * sizeof(char*));
+    obj->values = (JsonValue**)realloc(obj->values, obj->cap * sizeof(JsonValue*));
+    obj->keys   = (char**)realloc(obj->keys, obj->cap * sizeof(char*));
     for (i32 i = obj->size; i < obj->cap; i++)
     {
       obj->values[i] = (JsonValue*)malloc(sizeof(JsonValue));
@@ -154,7 +154,7 @@ inline void resizeArray(JsonArray* arr)
   if (arr->arraySize >= arr->arrayCap)
   {
     arr->arrayCap *= 2;
-    arr->values = realloc(arr->values, arr->arrayCap * sizeof(JsonValue));
+    arr->values = (JsonValue*)realloc(arr->values, arr->arrayCap * sizeof(JsonValue));
   }
 }
 
@@ -328,7 +328,7 @@ f64 parseNumber(Buffer* buffer)
   char prev                    = buffer->buffer[start + size];
   buffer->buffer[start + size] = '\0';
 
-  u64 res                      = strtoul(&buffer->buffer[start], NULL, 10);
+  u64 res                      = strtoul((char*)&buffer->buffer[start], NULL, 10);
   buffer->buffer[start + size] = prev;
 
   return *(f64*)&res;
@@ -344,7 +344,7 @@ bool parseString(char** key, Buffer* buffer)
   u64 len     = buffer->curr - start;
   *key        = (char*)malloc(sizeof(char) * (1 + len));
   (*key)[len] = '\0';
-  strncpy(*key, &buffer->buffer[start], len);
+  strncpy(*key, (char*)&buffer->buffer[start], len);
   advanceBuffer(buffer);
 
   return true;
