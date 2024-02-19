@@ -64,36 +64,25 @@ u64 EstimateCPUTimerFreq(void)
 
 void atExit(int* really)
 {
-  for (i32 i = profiler.count - 1; i >= 0; i--)
-  {
-    if (!profiler.done[i])
-    {
-      profiler.timeEnd[i] = ReadCPUTimer();
-      profiler.done[i]                 = true;
-      break;
-    }
-  }
+  profiler.profiles[*really].timeEnd = ReadCPUTimer();
 }
 
 void initProfiler()
 {
-  profiler.name[0]      = (char*)malloc(sizeof(char) * 5);
-  profiler.name[0]      = "Start";
-  profiler.timeStart[0] = ReadCPUTimer();
-  profiler.count        = 1;
-  memset(profiler.done, false, 100);
+  profiler.timeStart = ReadCPUTimer();
+  profiler.count     = -1;
 }
 
 void displayProfilingResult()
 {
   u64 endTime      = ReadCPUTimer();
-  u64 totalElapsed = endTime - profiler.timeStart[0];
+  u64 totalElapsed = endTime - profiler.timeStart;
   u64 cpuFreq      = EstimateCPUTimerFreq();
 
   printf("\nTotal time: %0.4fms (CPU freq %lu)\n", 1000.0 * (f64)totalElapsed / (f64)cpuFreq, cpuFreq);
 
-  for (u32 i = 1; i < profiler.count; i++)
+  for (u32 i = 0; i < profiler.count + 1; i++)
   {
-    PrintTimeElapsed(profiler.name[i], totalElapsed, profiler.timeStart[i], profiler.timeEnd[i]);
+    PrintTimeElapsed(profiler.profiles[i].name, totalElapsed, profiler.profiles[i].timeStart, profiler.profiles[i].timeEnd);
   }
 }

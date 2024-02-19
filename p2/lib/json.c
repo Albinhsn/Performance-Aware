@@ -428,6 +428,7 @@ bool parseJsonObject(JsonObject* obj, Buffer* buffer)
 bool parseJsonArray(JsonArray* arr, Buffer* buffer)
 {
   TimeBlock("JsonArray");
+
   advanceBuffer(buffer);
   skipWhitespace(buffer);
   bool res;

@@ -19,13 +19,19 @@ typedef int64_t  i64;
 typedef float    f32;
 typedef double   f64;
 
+struct Profile
+{
+  const char* name;
+  u64         timeStart;
+  u64         timeEnd;
+};
+typedef struct Profile Profile;
 struct Profiler
 {
-  const char* name[100];
-  u64         timeStart[100];
-  u64         timeEnd[100];
-  bool        done[100];
-  u64         count;
+  Profile profiles[100];
+  u64     count;
+  u64     timeStart;
+  u64     timeEnd;
 };
 typedef struct Profiler Profiler;
 extern Profiler         profiler;
@@ -34,20 +40,17 @@ void                    atExit(int* really);
 void                    displayProfilingResult();
 
 #define TimeBlock(blockName)                                                                                                                                                                           \
-  profiler.name[profiler.count]      = (char*)malloc(sizeof(char) * strlen(blockName));                                                                                                                \
-  profiler.name[profiler.count]      = blockName;                                                                                                                                                      \
-  profiler.timeStart[profiler.count] = ReadCPUTimer();                                                                                                                                                 \
-  profiler.done[profiler.count]      = false;                                                                                                                                                          \
   profiler.count++;                                                                                                                                                                                    \
-  int EXIT_VAR __attribute__((__cleanup__(atExit))) = 1;
+  profiler.profiles[profiler.count].name      = blockName;                                                                                                                                             \
+  profiler.profiles[profiler.count].timeStart = ReadCPUTimer();                                                                                                                                        \
+  int EXIT_VAR __attribute__((__cleanup__(atExit))) = profiler.count;
 
 #define TimeFunction                                                                                                                                                                                   \
-  profiler.name[profiler.count]      = (char*)malloc(sizeof(char) * strlen(__FUNCTION__));                                                                                                             \
-  profiler.name[profiler.count]      = __FUNCTION__;                                                                                                                                                   \
-  profiler.timeStart[profiler.count] = ReadCPUTimer();                                                                                                                                                 \
-  profiler.done[profiler.count]      = false;                                                                                                                                                          \
   profiler.count++;                                                                                                                                                                                    \
-  int EXIT_VAR __attribute__((__cleanup__(atExit))) = 1;
+  profiler.profiles[profiler.count].name      = __FUNCTION__;                                                                                                                                          \
+  profiler.profiles[profiler.count].timeStart = ReadCPUTimer();                                                                                                                                        \
+  int EXIT_VAR __attribute__((__cleanup__(atExit))) = profiler.count;
+
 u64 ReadCPUTimer(void);
 u64 EstimateCPUTimerFreq(void);
 
