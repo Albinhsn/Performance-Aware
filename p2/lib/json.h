@@ -69,7 +69,7 @@ void addElementToJsonObject(JsonObject* obj, char* key, JsonValue* value);
 void                addElementToJsonArray(JsonArray* array, JsonValue value);
 void                initJsonArray(JsonArray* array);
 void                initJsonObject(JsonObject* obj);
-bool deserializeFromFile(Json* json, String fileContent);
+bool deserializeFromString(Json* json, String fileContent);
 bool                serializeToFile(Json* json, const char* filename);
 void                debugJson(Json* json);
 

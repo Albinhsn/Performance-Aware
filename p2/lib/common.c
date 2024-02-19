@@ -1,6 +1,15 @@
 #include "common.h"
 #include <stdio.h>
+#include <string.h>
 
+Profiler    profiler;
+
+static void PrintTimeElapsed(char const* Label, u64 TotalTSCElapsed, u64 Begin, u64 End)
+{
+  u64 Elapsed = End - Begin;
+  f64 Percent = 100.0 * ((f64)Elapsed / (f64)TotalTSCElapsed);
+  printf("  %s: %lu (%.2f%%)\n", Label, Elapsed, Percent);
+}
 static u64 GetOSTimerFreq(void)
 {
   return 1000000;
@@ -34,12 +43,12 @@ u64 ReadCPUTimer(void)
 
 u64 EstimateCPUTimerFreq(void)
 {
-  u64 OSFreq    = GetOSTimerFreq();
+  u64 OSFreq     = GetOSTimerFreq();
 
-  u64 CPUStart  = ReadCPUTimer();
-  u64 OSStart   = ReadOSTimer();
-  u64 OSElapsed = 0;
-  u64 OSEnd     = 0;
+  u64 CPUStart   = ReadCPUTimer();
+  u64 OSStart    = ReadOSTimer();
+  u64 OSElapsed  = 0;
+  u64 OSEnd      = 0;
   u64 OSWaitTime = OSFreq * TIME_TO_WAIT / 1000;
   while (OSElapsed < OSWaitTime)
   {
@@ -49,10 +58,42 @@ u64 EstimateCPUTimerFreq(void)
 
   u64 CPUEnd     = ReadCPUTimer();
   u64 CPUElapsed = CPUEnd - CPUStart;
-  printf("   OS Timer: %lu -> %lu = %lu elapsed\n", OSStart, OSEnd, OSElapsed);
-  printf(" OS Seconds: %.4f\n", (f64)OSElapsed / (f64)OSFreq);
-
-  printf("  CPU Timer: %lu -> %lu = %lu elapsed\n", CPUStart, CPUEnd, CPUElapsed);
 
   return OSFreq * CPUElapsed / OSElapsed;
+}
+
+void atExit(int* really)
+{
+  for (i32 i = profiler.count - 1; i >= 0; i--)
+  {
+    if (!profiler.done[i])
+    {
+      profiler.timeEnd[i] = ReadCPUTimer();
+      profiler.done[i]                 = true;
+      break;
+    }
+  }
+}
+
+void initProfiler()
+{
+  profiler.name[0]      = (char*)malloc(sizeof(char) * 5);
+  profiler.name[0]      = "Start";
+  profiler.timeStart[0] = ReadCPUTimer();
+  profiler.count        = 1;
+  memset(profiler.done, false, 100);
+}
+
+void displayProfilingResult()
+{
+  u64 endTime      = ReadCPUTimer();
+  u64 totalElapsed = endTime - profiler.timeStart[0];
+  u64 cpuFreq      = EstimateCPUTimerFreq();
+
+  printf("\nTotal time: %0.4fms (CPU freq %lu)\n", 1000.0 * (f64)totalElapsed / (f64)cpuFreq, cpuFreq);
+
+  for (u32 i = 1; i < profiler.count; i++)
+  {
+    PrintTimeElapsed(profiler.name[i], totalElapsed, profiler.timeStart[i], profiler.timeEnd[i]);
+  }
 }

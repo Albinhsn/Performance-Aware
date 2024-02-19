@@ -427,6 +427,7 @@ bool parseJsonObject(JsonObject* obj, Buffer* buffer)
 
 bool parseJsonArray(JsonArray* arr, Buffer* buffer)
 {
+  TimeBlock("JsonArray");
   advanceBuffer(buffer);
   skipWhitespace(buffer);
   bool res;
@@ -533,8 +534,9 @@ bool parseJsonValue(JsonValue* value, Buffer* buffer)
   }
 }
 
-bool deserializeFromFile(Json* json, String fileContent)
+bool deserializeFromString(Json* json, String fileContent)
 {
+  TimeFunction;
   bool   res;
   bool   first = false;
 
