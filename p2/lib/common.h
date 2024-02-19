@@ -25,18 +25,17 @@ typedef double   f64;
 u64              ReadCPUTimer(void);
 u64              EstimateCPUTimerFreq(void);
 
-struct Profile
+struct ProfileAnchor
 {
-  u64         timeElapsed;
-  u64         timeElapsedChildren;
-  u64         timeElapsedRoot;
+  u64         timeElapsedExclusive;
+  u64         timeElapsedInclusive;
   u64         hitCount;
   const char* name;
 };
 
 struct Profiler
 {
-  Profile profiles[100];
+  ProfileAnchor profiles[100];
   u32     count;
   u64     timeStart;
 };
@@ -51,38 +50,38 @@ struct ProfileBlock
 {
   const char* name;
   u64         timeStart;
-  u64         oldElapsedAtRoot;
+  u64         oldElapsedInclusive;
   u32         index;
   u32         parentIndex;
 
   ProfileBlock(const char* name_)
   {
-    parentIndex    = profilerParent;
+    parentIndex         = profilerParent;
 
-    index          = profiler.count;
-    name = name_;
+    index               = profiler.count;
+    name                = name_;
 
-    Profile * profile = profiler.profiles + index;
-    oldElapsedAtRoot = profile->timeElapsedRoot;
+    ProfileAnchor* profile    = profiler.profiles + index;
+    oldElapsedInclusive = profile->timeElapsedInclusive;
 
-    profilerParent = index;
+    profilerParent      = index;
     profiler.count++;
 
-    timeStart      = ReadCPUTimer();
+    timeStart = ReadCPUTimer();
   }
 
   ~ProfileBlock()
   {
-    u64      elapsed = ReadCPUTimer() - timeStart;
-    profilerParent = parentIndex;
+    u64 elapsed      = ReadCPUTimer() - timeStart;
+    profilerParent   = parentIndex;
 
-    Profile* profile = profiler.profiles + index;
-    Profile* parent  = profiler.profiles + parentIndex;
+    ProfileAnchor* parent  = profiler.profiles + parentIndex;
+    ProfileAnchor* profile = profiler.profiles + index;
 
-    parent->timeElapsedChildren += elapsed;
+    parent->timeElapsedExclusive -= elapsed;
 
-    profile->timeElapsedRoot = oldElapsedAtRoot + elapsed;
-    profile->timeElapsed += elapsed;
+    profile->timeElapsedExclusive += elapsed;
+    profile->timeElapsedInclusive = oldElapsedInclusive + elapsed;
     profile->hitCount++;
 
     profile->name = name;

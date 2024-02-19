@@ -4,14 +4,13 @@
 Profiler    profiler;
 u32         profilerParent = 0;
 
-static void PrintTimeElapsed(Profile* profile, u64 TotalTSCElapsed)
+static void PrintTimeElapsed(ProfileAnchor* profile, u64 TotalTSCElapsed)
 {
-  u64 elapsed = profile->timeElapsed - profile->timeElapsedChildren;
-  f64 Percent = 100.0 * ((f64)elapsed / (f64)TotalTSCElapsed);
-  printf("  %s[%lu]: %lu (%.2f%%", profile->name, profile->hitCount, elapsed, Percent);
-  if (profile->timeElapsedRoot != elapsed)
+  f64 Percent = 100.0 * ((f64)profile->timeElapsedExclusive / (f64)TotalTSCElapsed);
+  printf("  %s[%lu]: %lu (%.2f%%", profile->name, profile->hitCount, profile->timeElapsedExclusive, Percent);
+  if (profile->timeElapsedInclusive != profile->timeElapsedExclusive)
   {
-    f64 percentWithChildren = 100.0 * ((f64)profile->timeElapsedRoot / TotalTSCElapsed);
+    f64 percentWithChildren = 100.0 * ((f64)profile->timeElapsedInclusive / TotalTSCElapsed);
     printf(", %.2f%% w/children", percentWithChildren);
   }
   printf(")\n");
@@ -83,8 +82,8 @@ void displayProfilingResult()
   printf("\nTotal time: %0.4fms (CPU freq %lu)\n", 1000.0 * (f64)totalElapsed / (f64)cpuFreq, cpuFreq);
   for (u32 i = 0; i < 5; i++)
   {
-    Profile* profile = profiler.profiles + i;
-    if (profile->timeElapsed)
+    ProfileAnchor* profile = profiler.profiles + i;
+    if (profile->timeElapsedInclusive)
     {
       PrintTimeElapsed(profile, totalElapsed);
     }
