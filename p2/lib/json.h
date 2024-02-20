@@ -73,4 +73,9 @@ bool deserializeFromString(Json* json, String fileContent);
 bool                serializeToFile(Json* json, const char* filename);
 void                debugJson(Json* json);
 
+JsonValue* lookupJsonElement(JsonObject* obj, const char* key);
+void freeJsonObject(JsonObject * obj);
+void freeJsonValue(JsonValue * value);
+void freeJsonArray(JsonArray * array);
+void freeJson(Json * json);
 #endif

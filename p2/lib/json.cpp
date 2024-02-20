@@ -183,7 +183,7 @@ void initJsonObject(JsonObject* obj)
   obj->cap    = 4;
   obj->values = (JsonValue**)malloc(sizeof(JsonValue*) * obj->cap);
   obj->keys   = (char**)malloc(sizeof(char*) * obj->cap);
-  for (i32 i = obj->size; i < obj->cap; i++)
+  for (i32 i = 0; i < obj->cap; i++)
   {
     obj->values[i] = (JsonValue*)malloc(sizeof(JsonValue));
   }
@@ -598,4 +598,92 @@ bool deserializeFromString(Json* json, String fileContent)
     return false;
   }
   return true;
+}
+
+JsonValue* lookupJsonElement(JsonObject* obj, const char* key)
+{
+  for (i32 i = 0; i < obj->size; i++)
+  {
+    if (strcmp(obj->keys[i], key) == 0)
+    {
+      return obj->values[i];
+    }
+  }
+  return NULL;
+}
+void freeJsonObject(JsonObject* obj)
+{
+  for (i32 i = 0; i < obj->size; i++)
+  {
+    freeJsonValue(obj->values[i]);
+    free(obj->values[i]);
+    free(obj->keys[i]);
+  }
+
+  for (i32 i = obj->size; i < obj->cap; i++)
+  {
+    free(obj->values[i]);
+  }
+  free(obj->values);
+  free(obj->keys);
+}
+void freeJsonValue(JsonValue* value)
+{
+  switch (value->type)
+  {
+  case JSON_OBJECT:
+  {
+    freeJsonObject(&value->obj);
+    break;
+  }
+  case JSON_ARRAY:
+  {
+    freeJsonArray(&value->arr);
+    break;
+  }
+  case JSON_STRING:
+  {
+    free(value->string);
+    break;
+  }
+  default:
+  {
+    break;
+  }
+  }
+}
+void freeJsonArray(JsonArray* array)
+{
+  for (i32 i = 0; i < array->arraySize; i++)
+  {
+    freeJsonValue(&array->values[i]);
+  }
+  // free(array->values);
+}
+void freeJson(Json* json)
+{
+  TimeFunction;
+
+  switch (json->headType)
+  {
+  case JSON_OBJECT:
+  {
+    freeJsonObject(&json->obj);
+    break;
+  }
+  case JSON_ARRAY:
+  {
+    freeJsonArray(&json->array);
+    break;
+  }
+  case JSON_VALUE:
+  {
+    freeJsonValue(&json->value);
+    break;
+  }
+  default:
+  {
+    break;
+  }
+  }
 }

@@ -80,9 +80,10 @@ void displayProfilingResult()
   u64 cpuFreq      = EstimateCPUTimerFreq();
 
   printf("\nTotal time: %0.4fms (CPU freq %lu)\n", 1000.0 * (f64)totalElapsed / (f64)cpuFreq, cpuFreq);
-  for (u32 i = 0; i < 5; i++)
+  for (u32 i = 0; i < ArrayCount(profiler.profiles); i++)
   {
     ProfileAnchor* profile = profiler.profiles + i;
+
     if (profile->timeElapsedInclusive)
     {
       PrintTimeElapsed(profile, totalElapsed);

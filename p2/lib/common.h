@@ -22,9 +22,11 @@ typedef int64_t  i64;
 typedef float    f32;
 typedef double   f64;
 
-u64              ReadCPUTimer(void);
-u64              EstimateCPUTimerFreq(void);
+#define PROFILER 1
 
+#ifndef PROFILER
+#define PROFILER 0 
+#endif
 struct ProfileAnchor
 {
   u64         timeElapsedExclusive;
@@ -41,10 +43,14 @@ struct Profiler
 };
 extern Profiler profiler;
 extern u32      profilerParent;
+u64              ReadCPUTimer(void);
+u64              EstimateCPUTimerFreq(void);
+
 
 void            initProfiler();
-void            atExit(int* really);
 void            displayProfilingResult();
+
+#if PROFILER
 
 struct ProfileBlock
 {
@@ -92,5 +98,10 @@ struct ProfileBlock
 #define NameConcat(A, B)     NameConcat2(A, B)
 #define TimeBlock(blockName) ProfileBlock NameConcat(Block, __LINE__)(blockName);
 #define TimeFunction         TimeBlock(__func__)
+#else
+
+#define TimeBlock(blockName)
+#define TimeFunction 
+#endif
 
 #endif
