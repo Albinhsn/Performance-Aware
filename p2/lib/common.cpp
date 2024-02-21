@@ -2,17 +2,30 @@
 #include <stdio.h>
 
 Profiler      profiler;
-u32           GlobalProfilerParent = 0;
-ProfileAnchor GlobalProfilerAnchors[4096];
+u32           globalProfilerParentIndex = 0;
+ProfileAnchor globalProfileAnchors[4096];
 
-static void   PrintTimeElapsed(ProfileAnchor* profile, u64 TotalTSCElapsed)
+static void   PrintTimeElapsed(ProfileAnchor* Anchor, u64 timerFreq, u64 TotalTSCElapsed)
 {
-  f64 Percent = 100.0 * ((f64)profile->TSCElapsedExclusive / (f64)TotalTSCElapsed);
-  printf("  %s[%lu]: %lu (%.2f%%", profile->Label, profile->HitCount, profile->TSCElapsedExclusive, Percent);
-  if (profile->TSCElapsedInclusive != profile->TSCElapsedExclusive)
+
+  f64 Percent = 100.0 * ((f64)Anchor->elapsedExclusive / (f64)TotalTSCElapsed);
+  printf("  %s[%lu]: %lu (%.2f%%", Anchor->label, Anchor->hitCount, Anchor->elapsedExclusive, Percent);
+  if (Anchor->elapsedInclusive != Anchor->elapsedExclusive)
   {
-    f64 percentWithChildren = 100.0 * ((f64)profile->TSCElapsedInclusive / TotalTSCElapsed);
-    printf(", %.2f%% w/children", percentWithChildren);
+    f64 PercentWithChildren = 100.0 * ((f64)Anchor->elapsedInclusive / (f64)TotalTSCElapsed);
+    printf(", %.2f%% w/children", PercentWithChildren);
+  }
+  if (Anchor->processedByteCount)
+  {
+    f64 mb             = 1024.0f * 1024.0f;
+    f64 gb             = mb * 1024.0f;
+
+    f64 seconds        = Anchor->elapsedInclusive / (f64)timerFreq;
+    f64 bytesPerSecond = Anchor->processedByteCount / seconds;
+    f64 mbProcessed    = Anchor->processedByteCount / mb;
+    f64 gbProcessed    = bytesPerSecond / gb;
+
+    printf(" %.3fmb at %.2fgb/s", mbProcessed, gbProcessed);
   }
   printf(")\n");
 }
@@ -80,14 +93,13 @@ void displayProfilingResult()
   u64 cpuFreq      = EstimateCPUTimerFreq();
 
   printf("\nTotal time: %0.4fms (CPU freq %lu)\n", 1000.0 * (f64)totalElapsed / (f64)cpuFreq, cpuFreq);
-  for (u32 i = 0; i < ArrayCount(GlobalProfilerAnchors); i++)
+  for (u32 i = 0; i < ArrayCount(globalProfileAnchors); i++)
   {
-    ProfileAnchor* profile = GlobalProfilerAnchors + i;
+    ProfileAnchor* profile = globalProfileAnchors + i;
 
-    if (profile->TSCElapsedInclusive)
+    if (profile->elapsedInclusive)
     {
-      printf("%ld %d\n", (long)profile, i);
-      PrintTimeElapsed(profile, totalElapsed);
+      PrintTimeElapsed(profile, cpuFreq, totalElapsed);
     }
   }
 }

@@ -309,6 +309,7 @@ bool serializeToFile(Json* json, const char* filename)
 
 f64 parseNumber(Buffer* buffer)
 {
+  TimeFunction;
   u64 start = buffer->curr;
   advanceBuffer(buffer);
   while (isdigit(getCurrentCharBuffer(buffer)))

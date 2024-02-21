@@ -86,7 +86,7 @@ int main()
   HaversineArray haversinePairs;
   parseHaversinePairs(&haversinePairs, &json);
   {
-    TimeBlock("Sum");
+    TimeBandwidth("Sum", haversinePairs.size * sizeof(HaversinePair));
     for (u64 i = 0; i < haversinePairs.size; i++)
     {
 

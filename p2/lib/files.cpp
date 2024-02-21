@@ -1,4 +1,5 @@
 #include "files.h"
+#include "common.h"
 
 void saveTarga(struct Image* image, const char* filename)
 {
@@ -42,32 +43,38 @@ void saveTarga(struct Image* image, const char* filename)
     return;
   }
 }
-bool ah_ReadFile(struct String * string, const char *fileName){
-  FILE *filePtr;
-  long fileSize, count;
-  char *buffer;
-  int error;
+bool ah_ReadFile(struct String* string, const char* fileName)
+{
+  FILE* filePtr;
+  long  fileSize, count;
+  char* buffer;
+  int   error;
 
   filePtr = fopen(fileName, "r");
-  if (!filePtr) {
+  if (!filePtr)
+  {
     return NULL;
   }
 
-  fileSize = fseek(filePtr, 0, SEEK_END);
-  fileSize = ftell(filePtr);
+  fseek(filePtr, 0, SEEK_END);
+  fileSize                 = ftell(filePtr);
 
-  string->len = fileSize;
-  string->buffer = (char *)malloc(sizeof(char) * (fileSize + 1));
+  string->len              = fileSize;
+  string->buffer           = (char*)malloc(sizeof(char) * (fileSize + 1));
   string->buffer[fileSize] = '\0';
+  TimeBandwidth("fread", fileSize);
+
   fseek(filePtr, 0, SEEK_SET);
   count = fread(string->buffer, 1, fileSize, filePtr);
-  if (count != fileSize) {
+  if (count != fileSize)
+  {
     free(string->buffer);
     return false;
   }
 
   error = fclose(filePtr);
-  if (error != 0) {
+  if (error != 0)
+  {
     free(string->buffer);
     return false;
   }
