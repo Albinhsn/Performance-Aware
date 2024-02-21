@@ -5,16 +5,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "common.h"
 struct String {
-  uint64_t len;
-  char *buffer;
+  u64 len;
+  u8 *buffer;
 };
 typedef struct String String;
-
-struct FileBuffer {
-  uint64_t len;
-  unsigned char *buffer;
-};
-typedef struct FileBuffer FileBuffer;
 
 #endif

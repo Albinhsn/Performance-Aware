@@ -68,7 +68,7 @@ void debugJsonValue(JsonValue* value)
   }
   case JSON_STRING:
   {
-    printf("\"%s\"", value->string);
+    printf("\"%.*s\"", (i32)value->string.len, value->string.buffer);
     break;
   }
   default:
@@ -83,8 +83,8 @@ void debugJsonObject(JsonObject* object)
   printf("{\n");
   for (i32 i = 0; i < object->size; i++)
   {
-    printf("\"%s\":", object->keys[i]);
-    debugJsonValue(object->values[i]);
+    printf("\"%.*s\":", (i32)object->keys[i].len, object->keys[i].buffer);
+    debugJsonValue(&object->values[i]);
     if (i != object->size - 1)
     {
       printf(",\n");
@@ -140,12 +140,8 @@ inline void resizeObject(JsonObject* obj)
   if (obj->size >= obj->cap)
   {
     obj->cap *= 2;
-    obj->values = (JsonValue**)realloc(obj->values, obj->cap * sizeof(JsonValue*));
-    obj->keys   = (char**)realloc(obj->keys, obj->cap * sizeof(char*));
-    for (i32 i = obj->size; i < obj->cap; i++)
-    {
-      obj->values[i] = (JsonValue*)malloc(sizeof(JsonValue));
-    }
+    obj->values = (JsonValue*)realloc(obj->values, obj->cap * sizeof(JsonValue));
+    obj->keys   = (String*)realloc(obj->keys, obj->cap * sizeof(String));
   }
 }
 
@@ -158,7 +154,7 @@ inline void resizeArray(JsonArray* arr)
   }
 }
 
-void addElementToJsonObject(JsonObject* obj, char* key, JsonValue* value)
+void addElementToJsonObject(JsonObject* obj, String key, JsonValue value)
 {
 
   resizeObject(obj);
@@ -179,14 +175,11 @@ void initJsonArray(JsonArray* array)
 }
 void initJsonObject(JsonObject* obj)
 {
+  TimeFunction;
   obj->size   = 0;
   obj->cap    = 4;
-  obj->values = (JsonValue**)malloc(sizeof(JsonValue*) * obj->cap);
-  obj->keys   = (char**)malloc(sizeof(char*) * obj->cap);
-  for (i32 i = 0; i < obj->cap; i++)
-  {
-    obj->values[i] = (JsonValue*)malloc(sizeof(JsonValue));
-  }
+  obj->values = (JsonValue*)malloc(sizeof(JsonValue) * obj->cap);
+  obj->keys   = (String*)malloc(sizeof(String) * obj->cap);
 }
 
 void serializeJsonValue(JsonValue* value, FILE* filePtr);
@@ -211,8 +204,8 @@ void serializeJsonObject(JsonObject* object, FILE* filePtr)
   fwrite("{", 1, 1, filePtr);
   for (i32 i = 0; i < object->size; i++)
   {
-    fprintf(filePtr, "\"%s\":", object->keys[i]);
-    serializeJsonValue(object->values[i], filePtr);
+    fprintf(filePtr, "\"%.*s\":", (i32)object->keys[i].len, object->keys[i].buffer);
+    serializeJsonValue(&object->values[i], filePtr);
     if (i != object->size - 1)
     {
       fwrite(",", 1, 1, filePtr);
@@ -260,7 +253,7 @@ void serializeJsonValue(JsonValue* value, FILE* filePtr)
   }
   case JSON_STRING:
   {
-    fprintf(filePtr, "\"%s\"", value->string);
+    fprintf(filePtr, "\"%.*s\"", (i32)value->string.len, value->string.buffer);
     break;
   }
   default:
@@ -334,7 +327,7 @@ f64 parseNumber(Buffer* buffer)
 
   return *(f64*)&res;
 }
-bool parseString(char** key, Buffer* buffer)
+bool parseString(String* key, Buffer* buffer)
 {
   TimeFunction;
   advanceBuffer(buffer);
@@ -344,9 +337,9 @@ bool parseString(char** key, Buffer* buffer)
     advanceBuffer(buffer);
   }
   u64 len     = buffer->curr - start;
-  *key        = (char*)malloc(sizeof(char) * (1 + len));
-  (*key)[len] = '\0';
-  strncpy(*key, (char*)&buffer->buffer[start], len);
+  key->len    = len;
+  key->buffer = &buffer->buffer[start];
+
   advanceBuffer(buffer);
 
   return true;
@@ -390,7 +383,7 @@ bool parseKeyValuePair(JsonObject* obj, Buffer* buffer)
     return false;
   }
 
-  res = parseJsonValue(obj->values[obj->size], buffer);
+  res = parseJsonValue(&obj->values[obj->size], buffer);
   if (!res)
   {
     return false;
@@ -467,6 +460,7 @@ bool parseKeyword(Buffer* buffer, const char* expected, u8 len)
 
 bool parseJsonValue(JsonValue* value, Buffer* buffer)
 {
+  TimeFunction;
   char currentChar = getCurrentCharBuffer(buffer);
   if (isdigit(currentChar) || currentChar == '-')
   {
@@ -602,13 +596,16 @@ bool deserializeFromString(Json* json, String fileContent)
   return true;
 }
 
-JsonValue* lookupJsonElement(JsonObject* obj, const char* key)
+JsonValue* lookupJsonElement(JsonObject* obj, const char* lookupKey)
 {
+  u32 keyLength = strlen(lookupKey);
   for (i32 i = 0; i < obj->size; i++)
   {
-    if (strcmp(obj->keys[i], key) == 0)
+    String key    = obj->keys[i];
+    u32    minLen = keyLength < key.len ? keyLength : key.len;
+    if (strncmp(lookupKey, (char*)key.buffer, minLen) == 0)
     {
-      return obj->values[i];
+      return &obj->values[i];
     }
   }
   return NULL;
@@ -617,17 +614,10 @@ void freeJsonObject(JsonObject* obj)
 {
   for (i32 i = 0; i < obj->size; i++)
   {
-    freeJsonValue(obj->values[i]);
-    free(obj->values[i]);
-    free(obj->keys[i]);
+    freeJsonValue(&obj->values[i]);
   }
 
-  for (i32 i = obj->size; i < obj->cap; i++)
-  {
-    free(obj->values[i]);
-  }
   free(obj->values);
-  free(obj->keys);
 }
 void freeJsonValue(JsonValue* value)
 {
@@ -641,11 +631,6 @@ void freeJsonValue(JsonValue* value)
   case JSON_ARRAY:
   {
     freeJsonArray(&value->arr);
-    break;
-  }
-  case JSON_STRING:
-  {
-    free(value->string);
     break;
   }
   default:

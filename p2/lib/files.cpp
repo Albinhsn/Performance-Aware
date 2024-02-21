@@ -43,6 +43,8 @@ void saveTarga(struct Image* image, const char* filename)
     return;
   }
 }
+
+
 bool ah_ReadFile(struct String* string, const char* fileName)
 {
   FILE* filePtr;
@@ -53,14 +55,14 @@ bool ah_ReadFile(struct String* string, const char* fileName)
   filePtr = fopen(fileName, "r");
   if (!filePtr)
   {
-    return NULL;
+    return false;
   }
 
   fseek(filePtr, 0, SEEK_END);
   fileSize                 = ftell(filePtr);
 
   string->len              = fileSize;
-  string->buffer           = (char*)malloc(sizeof(char) * (fileSize + 1));
+  string->buffer           = (u8*)malloc(sizeof(u8) * (fileSize + 1));
   string->buffer[fileSize] = '\0';
   TimeBandwidth("fread", fileSize);
 

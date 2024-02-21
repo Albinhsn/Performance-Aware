@@ -19,7 +19,6 @@ struct HaversineArray
 
 void parseHaversinePairs(HaversineArray* haversinePairs, Json* json)
 {
-  TimeFunction;
   if (json->headType != JSON_OBJECT)
   {
     printf("Head wasn't object?\n");
@@ -50,7 +49,6 @@ void parseHaversinePairs(HaversineArray* haversinePairs, Json* json)
 }
 static inline void cleanup(HaversineArray* haversinePairs, String* fileContent)
 {
-  TimeFunction;
   free(haversinePairs->pairs);
   free(fileContent->buffer);
 }
@@ -79,14 +77,12 @@ int main()
     return 1;
   }
 
-  f64            expected = strtod(string.buffer, NULL);
-
+  f64            expected = strtod((char*)string.buffer, NULL);
   f64            sum      = 0;
 
   HaversineArray haversinePairs;
   parseHaversinePairs(&haversinePairs, &json);
   {
-    TimeBandwidth("Sum", haversinePairs.size * sizeof(HaversinePair));
     for (u64 i = 0; i < haversinePairs.size; i++)
     {
 

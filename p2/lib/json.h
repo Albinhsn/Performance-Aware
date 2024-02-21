@@ -2,8 +2,8 @@
 #define JSON_H
 
 #include "common.h"
-#include <stdbool.h>
 #include "string.h"
+#include <stdbool.h>
 #include <stdint.h>
 
 enum JsonType
@@ -16,26 +16,23 @@ enum JsonType
   JSON_BOOL,
   JSON_NULL
 };
-typedef enum JsonType     JsonType;
 
-typedef struct JsonValue  JsonValue;
 typedef struct JsonValue  JsonValue;
 typedef struct JsonObject JsonObject;
 typedef struct JsonArray  JsonArray;
 
 struct JsonObject
 {
-  char**     keys;
-  JsonValue** values;
+  String*    keys;
+  JsonValue* values;
   u64        size;
   u64        cap;
 };
-typedef struct JsonObject JsonObject;
 
 struct JsonArray
 {
-  u64 arraySize;
-  u64 arrayCap;
+  u64        arraySize;
+  u64        arrayCap;
   JsonValue* values;
 };
 
@@ -47,8 +44,8 @@ struct JsonValue
     JsonObject obj;
     JsonArray  arr;
     bool       b;
-    char*      string;
-    f64 number;
+    String     string;
+    f64        number;
   };
 };
 typedef struct JsonArray JsonArray;
@@ -65,17 +62,17 @@ struct Json
 };
 typedef struct Json Json;
 
-void addElementToJsonObject(JsonObject* obj, char* key, JsonValue* value);
+void                addElementToJsonObject(JsonObject* obj, char* key, JsonValue* value);
 void                addElementToJsonArray(JsonArray* array, JsonValue value);
 void                initJsonArray(JsonArray* array);
 void                initJsonObject(JsonObject* obj);
-bool deserializeFromString(Json* json, String fileContent);
+bool                deserializeFromString(Json* json, String fileContent);
 bool                serializeToFile(Json* json, const char* filename);
 void                debugJson(Json* json);
 
-JsonValue* lookupJsonElement(JsonObject* obj, const char* key);
-void freeJsonObject(JsonObject * obj);
-void freeJsonValue(JsonValue * value);
-void freeJsonArray(JsonArray * array);
-void freeJson(Json * json);
+JsonValue*          lookupJsonElement(JsonObject* obj, const char* key);
+void                freeJsonObject(JsonObject* obj);
+void                freeJsonValue(JsonValue* value);
+void                freeJsonArray(JsonArray* array);
+void                freeJson(Json* json);
 #endif
