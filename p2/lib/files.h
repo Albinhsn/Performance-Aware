@@ -1,3 +1,5 @@
+#ifndef FILES_H
+#define FILES_H
 #include "string.h"
 #include <stdbool.h>
 #include <stdio.h>
@@ -40,3 +42,5 @@ struct Image *LoadTarga(const char *filename);
 bool ah_ReadFile(struct String *string, const char *fileName);
 
 char *ah_strcpy(char *buffer, struct String *s2);
+
+#endif

@@ -1,16 +1,17 @@
 #include "common.h"
 #include <stdio.h>
 
-Profiler    profiler;
-u32         profilerParent = 0;
+Profiler      profiler;
+u32           GlobalProfilerParent = 0;
+ProfileAnchor GlobalProfilerAnchors[4096];
 
-static void PrintTimeElapsed(ProfileAnchor* profile, u64 TotalTSCElapsed)
+static void   PrintTimeElapsed(ProfileAnchor* profile, u64 TotalTSCElapsed)
 {
-  f64 Percent = 100.0 * ((f64)profile->timeElapsedExclusive / (f64)TotalTSCElapsed);
-  printf("  %s[%lu]: %lu (%.2f%%", profile->name, profile->hitCount, profile->timeElapsedExclusive, Percent);
-  if (profile->timeElapsedInclusive != profile->timeElapsedExclusive)
+  f64 Percent = 100.0 * ((f64)profile->TSCElapsedExclusive / (f64)TotalTSCElapsed);
+  printf("  %s[%lu]: %lu (%.2f%%", profile->Label, profile->HitCount, profile->TSCElapsedExclusive, Percent);
+  if (profile->TSCElapsedInclusive != profile->TSCElapsedExclusive)
   {
-    f64 percentWithChildren = 100.0 * ((f64)profile->timeElapsedInclusive / TotalTSCElapsed);
+    f64 percentWithChildren = 100.0 * ((f64)profile->TSCElapsedInclusive / TotalTSCElapsed);
     printf(", %.2f%% w/children", percentWithChildren);
   }
   printf(")\n");
@@ -69,23 +70,23 @@ u64 EstimateCPUTimerFreq(void)
 
 void initProfiler()
 {
-  profiler.timeStart = ReadCPUTimer();
-  profiler.count     = 1;
+  profiler.StartTSC = ReadCPUTimer();
 }
 
 void displayProfilingResult()
 {
   u64 endTime      = ReadCPUTimer();
-  u64 totalElapsed = endTime - profiler.timeStart;
+  u64 totalElapsed = endTime - profiler.StartTSC;
   u64 cpuFreq      = EstimateCPUTimerFreq();
 
   printf("\nTotal time: %0.4fms (CPU freq %lu)\n", 1000.0 * (f64)totalElapsed / (f64)cpuFreq, cpuFreq);
-  for (u32 i = 0; i < ArrayCount(profiler.profiles); i++)
+  for (u32 i = 0; i < ArrayCount(GlobalProfilerAnchors); i++)
   {
-    ProfileAnchor* profile = profiler.profiles + i;
+    ProfileAnchor* profile = GlobalProfilerAnchors + i;
 
-    if (profile->timeElapsedInclusive)
+    if (profile->TSCElapsedInclusive)
     {
+      printf("%ld %d\n", (long)profile, i);
       PrintTimeElapsed(profile, totalElapsed);
     }
   }

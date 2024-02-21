@@ -25,83 +25,105 @@ typedef double   f64;
 #define PROFILER 1
 
 #ifndef PROFILER
-#define PROFILER 0 
+#define PROFILER 0
 #endif
-struct ProfileAnchor
-{
-  u64         timeElapsedExclusive;
-  u64         timeElapsedInclusive;
-  u64         hitCount;
-  const char* name;
-};
 
 struct Profiler
 {
-  ProfileAnchor profiles[100];
-  u32     count;
-  u64     timeStart;
+  u64 StartTSC;
+  u64 EndTSC;
 };
-extern Profiler profiler;
-extern u32      profilerParent;
-u64              ReadCPUTimer(void);
-u64              EstimateCPUTimerFreq(void);
 
+extern Profiler profiler;
+u64             ReadCPUTimer(void);
+u64             EstimateCPUTimerFreq(void);
 
 void            initProfiler();
 void            displayProfilingResult();
 
 #if PROFILER
 
+struct ProfileAnchor
+{
+  u64         TSCElapsedExclusive; // NOTE(casey): Does NOT include children
+  u64         TSCElapsedInclusive; // NOTE(casey): DOES include children
+  u64         HitCount;
+  char const* Label;
+};
+extern ProfileAnchor GlobalProfilerAnchors[4096];
+extern u32           GlobalProfilerParent;
+
 struct ProfileBlock
 {
-  const char* name;
-  u64         timeStart;
-  u64         oldElapsedInclusive;
-  u32         index;
-  u32         parentIndex;
-
-  ProfileBlock(const char* name_)
+  char const* Label;
+  u64         OldTSCElapsedInclusive;
+  u64         StartTSC;
+  u32         ParentIndex;
+  u32         AnchorIndex;
+  ProfileBlock(char const* Label_, u32 AnchorIndex_)
   {
-    parentIndex         = profilerParent;
+    ParentIndex            = GlobalProfilerParent;
 
-    index               = profiler.count;
-    name                = name_;
+    AnchorIndex            = AnchorIndex_;
+    Label                  = Label_;
 
-    ProfileAnchor* profile    = profiler.profiles + index;
-    oldElapsedInclusive = profile->timeElapsedInclusive;
+    ProfileAnchor* Anchor  = GlobalProfilerAnchors + AnchorIndex;
+    OldTSCElapsedInclusive = Anchor->TSCElapsedInclusive;
 
-    profilerParent      = index;
-    profiler.count++;
-
-    timeStart = ReadCPUTimer();
+    GlobalProfilerParent = AnchorIndex;
+    StartTSC             = ReadCPUTimer();
   }
 
-  ~ProfileBlock()
+  ~ProfileBlock(void)
   {
-    u64 elapsed      = ReadCPUTimer() - timeStart;
-    profilerParent   = parentIndex;
+    u64 Elapsed           = ReadCPUTimer() - StartTSC;
+    GlobalProfilerParent  = ParentIndex;
 
-    ProfileAnchor* parent  = profiler.profiles + parentIndex;
-    ProfileAnchor* profile = profiler.profiles + index;
+    ProfileAnchor* Parent = GlobalProfilerAnchors + ParentIndex;
+    ProfileAnchor* Anchor = GlobalProfilerAnchors + AnchorIndex;
 
-    parent->timeElapsedExclusive -= elapsed;
+    Parent->TSCElapsedExclusive -= Elapsed;
+    Anchor->TSCElapsedExclusive += Elapsed;
+    Anchor->TSCElapsedInclusive = OldTSCElapsedInclusive + Elapsed;
+    ++Anchor->HitCount;
 
-    profile->timeElapsedExclusive += elapsed;
-    profile->timeElapsedInclusive = oldElapsedInclusive + elapsed;
-    profile->hitCount++;
-
-    profile->name = name;
+    Anchor->Label = Label;
   }
 };
 
-#define NameConcat2(A, B)    A##B
-#define NameConcat(A, B)     NameConcat2(A, B)
-#define TimeBlock(blockName) ProfileBlock NameConcat(Block, __LINE__)(blockName);
-#define TimeFunction         TimeBlock(__func__)
+#define NameConcat2(A, B)            A##B
+#define NameConcat(A, B)             NameConcat2(A, B)
+#define TimeBlock(Name)              ProfileBlock NameConcat(Block, __LINE__)(Name, __COUNTER__ + 1);
+#define ProfilerEndOfCompilationUnit static_assert(__COUNTER__ < ArrayCount(GlobalProfilerAnchors), "Number of profile points exceeds size of profiler::Anchors array")
+#define TimeFunction                 TimeBlock(__func__)
+
+static void PrintTimeElapsed(u64 TotalTSCElapsed, ProfileAnchor* Anchor)
+{
+  f64 Percent = 100.0 * ((f64)Anchor->TSCElapsedExclusive / (f64)TotalTSCElapsed);
+  printf("  %s[%lu]: %lu (%.2f%%", Anchor->Label, Anchor->HitCount, Anchor->TSCElapsedExclusive, Percent);
+  if (Anchor->TSCElapsedInclusive != Anchor->TSCElapsedExclusive)
+  {
+    f64 PercentWithChildren = 100.0 * ((f64)Anchor->TSCElapsedInclusive / (f64)TotalTSCElapsed);
+    printf(", %.2f%% w/children", PercentWithChildren);
+  }
+  printf(")\n");
+}
+
+static void PrintAnchorData(u64 TotalCPUElapsed)
+{
+  for (u32 AnchorIndex = 0; AnchorIndex < ArrayCount(GlobalProfilerAnchors); ++AnchorIndex)
+  {
+    ProfileAnchor* Anchor = GlobalProfilerAnchors + AnchorIndex;
+    if (Anchor->TSCElapsedInclusive)
+    {
+      PrintTimeElapsed(TotalCPUElapsed, Anchor);
+    }
+  }
+}
 #else
 
 #define TimeBlock(blockName)
-#define TimeFunction 
+#define TimeFunction
 #endif
 
 #endif

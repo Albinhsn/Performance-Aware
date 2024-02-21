@@ -335,6 +335,7 @@ f64 parseNumber(Buffer* buffer)
 }
 bool parseString(char** key, Buffer* buffer)
 {
+  TimeFunction;
   advanceBuffer(buffer);
   u64 start = buffer->curr;
   while (getCurrentCharBuffer(buffer) != '"')

@@ -1,7 +1,7 @@
-#include "./lib/common.h"
-#include "./lib/files.h"
-#include "./lib/json.h"
-#include "haversine.h"
+#include "./lib/common.cpp"
+#include "./lib/files.cpp"
+#include "./lib/json.cpp"
+#include "haversine.cpp"
 #include <cstdlib>
 #include <stdlib.h>
 #include <time.h>
