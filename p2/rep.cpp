@@ -12,6 +12,13 @@ enum TestMode
   TestMode_Completed,
   TestMode_Error
 };
+enum AllocationMode
+{
+  AllocationMode_Malloc,
+  AllocationMode_None,
+  AllocationMode_Count
+};
+
 struct RepetitionTestResults
 {
   u64 testCount;
@@ -22,8 +29,9 @@ struct RepetitionTestResults
 
 struct ReadParameters
 {
-  String      dest;
-  const char* filename;
+  String         dest;
+  const char*    filename;
+  AllocationMode allocationMode;
 };
 
 struct RepetitionTester
@@ -42,6 +50,21 @@ struct RepetitionTester
 
   RepetitionTestResults results;
 };
+
+static const char* describeAllocationType(AllocationMode allocMode)
+{
+  switch (allocMode)
+  {
+  case AllocationMode_Malloc:
+  {
+    return "malloc";
+  }
+  default:
+  {
+    return "";
+  }
+  }
+}
 static f64 SecondsFromCPUTime(f64 CPUTime, u64 CPUTimerFreq)
 {
   f64 Result = 0.0;
@@ -204,6 +227,47 @@ static bool IsTesting(RepetitionTester* tester)
   bool Result = (tester->mode == TestMode_Testing);
   return Result;
 }
+static void handleAllocation(ReadParameters* params, String* buffer)
+{
+  switch (params->allocationMode)
+  {
+  case AllocationMode_None:
+  {
+    break;
+  }
+  case AllocationMode_Malloc:
+  {
+    allocateString(buffer, buffer->len);
+    break;
+  }
+  default:
+  {
+    fprintf(stderr, "How did we end up here?\n");
+    exit(2);
+  }
+  }
+}
+
+static void handleDeallocation(ReadParameters* params, String* buffer)
+{
+  switch (params->allocationMode)
+  {
+  case AllocationMode_None:
+  {
+    break;
+  }
+  case AllocationMode_Malloc:
+  {
+    free(buffer->buffer);
+    break;
+  }
+  default:
+  {
+    fprintf(stderr, "How did we end up here?\n");
+    exit(2);
+  }
+  }
+}
 static void readFRead(RepetitionTester* repetitionTester, ReadParameters* params)
 {
   while (IsTesting(repetitionTester))
@@ -212,6 +276,7 @@ static void readFRead(RepetitionTester* repetitionTester, ReadParameters* params
     if (filePtr)
     {
       String destBuffer = params->dest;
+      handleAllocation(params, &destBuffer);
 
       BeginTime(repetitionTester);
       size_t result = fread(destBuffer.buffer, destBuffer.len, 1, filePtr);
@@ -225,7 +290,7 @@ static void readFRead(RepetitionTester* repetitionTester, ReadParameters* params
       {
         Error(repetitionTester, "fread failed");
       }
-
+      handleDeallocation(params, &destBuffer);
       fclose(filePtr);
     }
     else
@@ -242,10 +307,11 @@ static void readRead(RepetitionTester* repetitionTester, ReadParameters* params)
     int filePtr = open(params->filename, O_RDONLY);
     if (filePtr != -1)
     {
-      String destBuffer    = params->dest;
+      String destBuffer = params->dest;
+      handleAllocation(params, &destBuffer);
 
-      u8*    dest          = destBuffer.buffer;
-      u64    sizeRemaining = destBuffer.len;
+      u8* dest          = destBuffer.buffer;
+      u64 sizeRemaining = destBuffer.len;
       while (sizeRemaining)
       {
         u32 readSize = INT_MAX;
@@ -272,6 +338,7 @@ static void readRead(RepetitionTester* repetitionTester, ReadParameters* params)
         dest += readSize;
       }
 
+      handleDeallocation(params, &destBuffer);
       close(filePtr);
     }
     else
@@ -299,22 +366,29 @@ int main()
   struct stat Stat;
   stat("./data/haversine10mil_02.json", &Stat);
 
-  ReadParameters params                               = {};
-  params.dest                                         = (String){.len = (u64)Stat.st_size, .buffer = NULL};
-  params.dest.buffer                                  = (u8*)malloc(sizeof(u8) * Stat.st_size);
+  ReadParameters params                                                     = {};
+  params.dest                                                               = (String){.len = (u64)Stat.st_size, .buffer = NULL};
+  params.dest.buffer                                                        = (u8*)malloc(sizeof(u8) * Stat.st_size);
 
-  params.filename                                     = "./data/haversine10mil_02.json";
+  params.filename                                                           = "./data/haversine10mil_02.json";
 
-  RepetitionTester testers[ArrayCount(testFunctions)] = {};
+  RepetitionTester testers[ArrayCount(testFunctions)][AllocationMode_Count] = {};
 
-  for (u32 FuncIndex = 0; FuncIndex < ArrayCount(testFunctions); ++FuncIndex)
+  for (;;)
   {
-    RepetitionTester* tester   = testers + FuncIndex;
-    TestFunction      testFunc = testFunctions[FuncIndex];
+    for (u32 funcIndex = 0; funcIndex < ArrayCount(testFunctions); ++funcIndex)
+    {
+      for (u32 allocIndex = 0; allocIndex < AllocationMode_Count; ++allocIndex)
+      {
+        params.allocationMode      = (AllocationMode)allocIndex;
+        RepetitionTester* tester   = &testers[funcIndex][allocIndex];
+        TestFunction      testFunc = testFunctions[funcIndex];
 
-    printf("\n--- %s ---\n", testFunc.Name);
-    NewTestWave(tester, params.dest.len, CPUTimerFreq);
-    testFunc.Func(tester, &params);
+        printf("\n--- %s%s%s ---\n", describeAllocationType(params.allocationMode), params.allocationMode != AllocationMode_None ? "+" : "", testFunc.Name);
+        NewTestWave(tester, params.dest.len, CPUTimerFreq);
+        testFunc.Func(tester, &params);
+      }
+    }
   }
 
   return 0;
