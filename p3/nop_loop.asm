@@ -67,6 +67,12 @@ NOP1x9AllBytesASM:
     nop
     nop
     nop
+    nop
+    nop
+    nop
+    nop
+    nop
+    nop
     inc rax
     cmp rax, rdi
     jb .loop

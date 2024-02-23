@@ -204,9 +204,9 @@ struct TestFunction {
   TestFunc *Func;
 };
 TestFunction testFunctions[] = {
-    {"NOPAllBytes", NOPAllBytesASM},
-    {"NOP1x3AllBytes", NOP1x3AllBytesASM},
     {"NOP1x9AllBytes", NOP1x9AllBytesASM},
+    {"NOP1x3AllBytes", NOP1x3AllBytesASM},
+    {"NOPAllBytes", NOPAllBytesASM},
 };
 
 int main() {
