@@ -351,14 +351,13 @@ f64 parseNumber(Buffer* buffer)
 void parseString(String* key, Buffer* buffer)
 {
   advanceBuffer(buffer);
-  u64 start = buffer->curr;
+  u64 start   = buffer->curr;
+  key->buffer = &buffer->buffer[start];
   while (getCurrentCharBuffer(buffer) != '"')
   {
     advanceBuffer(buffer);
   }
-  u64 len     = buffer->curr - start;
-  key->len    = len;
-  key->buffer = &buffer->buffer[start];
+  key->len = buffer->curr - start;
 
   advanceBuffer(buffer);
 }
@@ -404,7 +403,6 @@ bool parseKeyValuePair(Arena* arena, JsonObject* obj, Buffer* buffer)
     return false;
   }
   obj->size++;
-
   skipWhitespace(buffer);
   return true;
 }
@@ -438,7 +436,6 @@ bool parseJsonObject(Arena* arena, JsonObject* obj, Buffer* buffer)
 
 bool parseJsonArray(Arena* arena, JsonArray* arr, Buffer* buffer)
 {
-
   advanceBuffer(buffer);
   skipWhitespace(buffer);
   bool res;
