@@ -18,6 +18,13 @@ enum JsonType
   JSON_NULL
 };
 
+struct JsonElement
+{
+  String       label;
+  JsonElement* firstSubElement;
+  JsonElement* nextSibling;
+};
+
 typedef struct JsonValue  JsonValue;
 typedef struct JsonObject JsonObject;
 typedef struct JsonArray  JsonArray;

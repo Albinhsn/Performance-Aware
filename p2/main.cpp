@@ -1,9 +1,11 @@
 #include "./lib/common.cpp"
 #include "./lib/files.cpp"
 #include "./lib/json.cpp"
+#include "arena.cpp"
 #include "arena.h"
 #include "haversine.cpp"
 #include <cstdlib>
+#include <pthread.h>
 #include <stdlib.h>
 #include <time.h>
 
@@ -18,7 +20,61 @@ struct HaversineArray
   u64            size;
 };
 
-void parseHaversinePairs(HaversineArray* haversinePairs, Json* json)
+struct ParseHaversinePairsArgs
+{
+  HaversinePair* pairs;
+  JsonArray*     jsonArray;
+  u64            start;
+  u64            end;
+};
+
+void* gatherParseHaversinePairs(void* arg)
+{
+  ParseHaversinePairsArgs* args           = (ParseHaversinePairsArgs*)arg;
+  JsonValue*               values         = args->jsonArray->values;
+  HaversinePair*           haversinePairs = args->pairs;
+  for (i32 i = args->start; i < args->end; i++)
+  {
+    JsonValue  arrayValue = values[i];
+    JsonObject arrayObj   = arrayValue.obj;
+    haversinePairs[i]     = (HaversinePair){
+            .x0 = lookupJsonElement(&arrayObj, "x0")->number, //
+            .y0 = lookupJsonElement(&arrayObj, "y0")->number, //
+            .x1 = lookupJsonElement(&arrayObj, "x1")->number, //
+            .y1 = lookupJsonElement(&arrayObj, "y1")->number, //
+    };
+  }
+
+  return 0;
+}
+struct HaversineThreadArgs
+{
+  HaversineArray* array;
+  f64*            sums;
+  u64             start;
+  u64             end;
+};
+
+void* gatherHaversinePairSum(void* arg)
+{
+  HaversineThreadArgs* args  = (HaversineThreadArgs*)arg;
+  f64                  sum   = 0.0f;
+  HaversinePair*       pairs = args->array->pairs;
+  for (u64 i = args->start; i < args->end; i++)
+  {
+    HaversinePair pair  = pairs[i];
+    f64           x0    = pair.x0;
+    f64           y0    = pair.y0;
+    f64           x1    = pair.x1;
+    f64           y1    = pair.y1;
+    f64           extra = referenceHaversine(x0, y0, x1, y1);
+    sum += extra;
+  }
+  *args->sums = sum;
+  return 0;
+}
+
+void parseHaversinePairs(Arena* arena, HaversineArray* haversinePairs, Json* json)
 {
   if (json->headType != JSON_OBJECT)
   {
@@ -33,25 +89,41 @@ void parseHaversinePairs(HaversineArray* haversinePairs, Json* json)
     exit(1);
   }
 
-  JsonArray pairsArray  = pairsValue->arr;
-  haversinePairs->pairs = (HaversinePair*)malloc(sizeof(HaversinePair) * pairsArray.arraySize);
-  haversinePairs->size  = pairsArray.arraySize;
-  for (i32 i = 0; i < pairsArray.arraySize; i++)
+  JsonArray pairsArray                = pairsValue->arr;
+  haversinePairs->pairs               = ArenaPushArray(arena, HaversinePair, pairsArray.arraySize);
+  haversinePairs->size                = pairsArray.arraySize;
+
+  u64                     threadCount = 10;
+  u64                     step        = haversinePairs->size / threadCount;
+  pthread_t               threadIds[threadCount];
+  ParseHaversinePairsArgs args[threadCount];
+  f64                     threadSums[threadCount];
+  for (i32 i = 0; i < threadCount; i++)
   {
-    JsonValue  arrayValue    = pairsArray.values[i];
-    JsonObject arrayObj      = arrayValue.obj;
-    haversinePairs->pairs[i] = (HaversinePair){
-        .x0 = lookupJsonElement(&arrayObj, "x0")->number, //
-        .y0 = lookupJsonElement(&arrayObj, "y0")->number, //
-        .x1 = lookupJsonElement(&arrayObj, "x1")->number, //
-        .y1 = lookupJsonElement(&arrayObj, "y1")->number, //
-    };
+    args[i].start     = step * i;
+    args[i].end       = step * (i + 1);
+    args[i].pairs     = haversinePairs->pairs;
+    args[i].jsonArray = &pairsArray;
+  }
+  args[threadCount - 1].end = haversinePairs->size;
+  for (i32 i = 0; i < threadCount; i++)
+  {
+    pthread_create(&threadIds[i], NULL, gatherParseHaversinePairs, (void*)&args[i]);
+  }
+
+  for (i32 i = 0; i < threadCount; i++)
+  {
+    if (pthread_join(threadIds[i], NULL) != 0)
+    {
+      printf("Failed to join?\n");
+      exit(2);
+    }
   }
 }
-static inline void cleanup(HaversineArray* haversinePairs, String* fileContent)
+static inline void cleanup(String* string, String* fileContent)
 {
-  free(haversinePairs->pairs);
   free(fileContent->buffer);
+  free(string->buffer);
 }
 
 int main()
@@ -88,17 +160,34 @@ int main()
   f64            sum      = 0;
 
   HaversineArray haversinePairs;
-  parseHaversinePairs(&haversinePairs, &json);
-  for (u64 i = 0; i < haversinePairs.size; i++)
-  {
+  parseHaversinePairs(&arena, &haversinePairs, &json);
 
-    HaversinePair pair  = haversinePairs.pairs[i];
-    f64           x0    = pair.x0;
-    f64           y0    = pair.y0;
-    f64           x1    = pair.x1;
-    f64           y1    = pair.y1;
-    f64           extra = referenceHaversine(x0, y0, x1, y1);
-    sum += extra;
+  u64                 threadCount = 10;
+  u64                 step        = haversinePairs.size / threadCount;
+  pthread_t           threadIds[threadCount];
+  HaversineThreadArgs args[threadCount];
+  f64                 threadSums[threadCount];
+  for (i32 i = 0; i < threadCount; i++)
+  {
+    args[i].start = step * i;
+    args[i].end   = step * (i + 1);
+    args[i].array = &haversinePairs;
+    args[i].sums  = &threadSums[i];
+  }
+  args[threadCount - 1].end = haversinePairs.size;
+  for (i32 i = 0; i < threadCount; i++)
+  {
+    pthread_create(&threadIds[i], NULL, gatherHaversinePairSum, (void*)&args[i]);
+  }
+
+  for (i32 i = 0; i < threadCount; i++)
+  {
+    if (pthread_join(threadIds[i], NULL) != 0)
+    {
+      printf("Failed to join?\n");
+      exit(2);
+    }
+    sum += threadSums[i];
   }
 
   sum /= haversinePairs.size;
@@ -107,10 +196,10 @@ int main()
 
   printf("Expected %lf\n", expected);
   printf("Difference %lf\n", expected - sum);
-  printf("%ld vs %ld\n", arena.ptr, arena.maxSize);
+  printf("Used %ld of %ld\n", arena.ptr, arena.maxSize);
 
-  // freeJson(&json);
-  // cleanup(&haversinePairs, &fileContent);
+  cleanup(&string, &fileContent);
+  free((void*)arena.memory);
 
   displayProfilingResult();
   return 0;

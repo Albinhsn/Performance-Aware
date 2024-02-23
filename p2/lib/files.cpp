@@ -64,7 +64,6 @@ bool ah_ReadFile(struct String* string, const char* fileName)
   string->len              = fileSize;
   string->buffer           = (u8*)malloc(sizeof(u8) * (fileSize + 1));
   string->buffer[fileSize] = '\0';
-  TimeBandwidth("fread", fileSize);
 
   fseek(filePtr, 0, SEEK_SET);
   count = fread(string->buffer, 1, fileSize, filePtr);

@@ -177,7 +177,6 @@ void initJsonArray(Arena* arena, JsonArray* array)
 }
 void initJsonObject(Arena* arena, JsonObject* obj)
 {
-  // TimeFunction;
   obj->size   = 0;
   obj->cap    = 4;
   obj->values = ArenaPushArray(arena, JsonValue, obj->cap);
@@ -315,7 +314,6 @@ inline f64 convertJsonNumber(Buffer* buffer)
 
 f64 parseNumber(Buffer* buffer)
 {
-  // TimeFunction;
   f64 sign = getCurrentCharBuffer(buffer) == '-' ? -1.0f : 1.0f;
   if (sign == -1.0f)
   {
@@ -350,9 +348,8 @@ f64 parseNumber(Buffer* buffer)
   return sign * result;
 }
 
-bool parseString(String* key, Buffer* buffer)
+void parseString(String* key, Buffer* buffer)
 {
-  // TimeFunction;
   advanceBuffer(buffer);
   u64 start = buffer->curr;
   while (getCurrentCharBuffer(buffer) != '"')
@@ -364,8 +361,6 @@ bool parseString(String* key, Buffer* buffer)
   key->buffer = &buffer->buffer[start];
 
   advanceBuffer(buffer);
-
-  return true;
 }
 
 static inline void skipWhitespace(Buffer* buffer)
@@ -392,13 +387,10 @@ bool parseJsonArray(Arena* arena, JsonArray* arr, Buffer* buffer);
 
 bool parseKeyValuePair(Arena* arena, JsonObject* obj, Buffer* buffer)
 {
+  // TimeFunction;
   resizeObject(obj);
 
-  bool res = parseString(&obj->keys[obj->size], buffer);
-  if (!res)
-  {
-    return false;
-  }
+  parseString(&obj->keys[obj->size], buffer);
   skipWhitespace(buffer);
 
   if (!consumeToken(buffer, ':'))
@@ -406,7 +398,7 @@ bool parseKeyValuePair(Arena* arena, JsonObject* obj, Buffer* buffer)
     return false;
   }
 
-  res = parseJsonValue(arena, &obj->values[obj->size], buffer);
+  bool res = parseJsonValue(arena, &obj->values[obj->size], buffer);
   if (!res)
   {
     return false;
@@ -419,6 +411,7 @@ bool parseKeyValuePair(Arena* arena, JsonObject* obj, Buffer* buffer)
 
 bool parseJsonObject(Arena* arena, JsonObject* obj, Buffer* buffer)
 {
+  // TimeFunction;
   advanceBuffer(buffer);
   skipWhitespace(buffer);
 
@@ -445,7 +438,6 @@ bool parseJsonObject(Arena* arena, JsonObject* obj, Buffer* buffer)
 
 bool parseJsonArray(Arena* arena, JsonArray* arr, Buffer* buffer)
 {
-  TimeBlock("JsonArray");
 
   advanceBuffer(buffer);
   skipWhitespace(buffer);
@@ -483,7 +475,6 @@ bool parseKeyword(Buffer* buffer, const char* expected, u8 len)
 
 bool parseJsonValue(Arena* arena, JsonValue* value, Buffer* buffer)
 {
-  // TimeFunction;
   char currentChar = getCurrentCharBuffer(buffer);
   if (isdigit(currentChar) || currentChar == '-')
   {
@@ -497,7 +488,14 @@ bool parseJsonValue(Arena* arena, JsonValue* value, Buffer* buffer)
   case '\"':
   {
     value->type = JSON_STRING;
-    return parseString(&value->string, buffer);
+    parseString(&value->string, buffer);
+    return true;
+  }
+  case '-':
+  {
+    value->type   = JSON_NUMBER;
+    value->number = parseNumber(buffer);
+    return true;
   }
   case '{':
   {
