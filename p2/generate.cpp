@@ -33,13 +33,13 @@ static inline f64 generateRandomYCoordinate(f64 offset)
   return y;
 }
 
-static inline f64 createAndAddRandomClusterValue(JsonObject* obj, char* name, f64 bound, f64 offset)
+static inline f64 createAndAddRandomClusterValue(JsonObject* obj, String name, f64 bound, f64 offset)
 {
   f64        v     = (rand() / (f32)RAND_MAX) * bound * 2 - bound + offset;
   JsonValue* value = (JsonValue*)malloc(sizeof(JsonValue));
   value->type      = JSON_NUMBER;
   value->number    = v;
-  addElementToJsonObject(obj, name, value);
+  addElementToJsonObject(obj, name, *value);
 
   return v;
 }
@@ -62,26 +62,33 @@ static f64 addClusterCoordinates(JsonArray* array, i64 size)
 
     initJsonObject(&value.obj);
 
-    f64 x0 = createAndAddRandomClusterValue(&value.obj, "x0", xOffset, x0Offset);
-    f64 y0 = createAndAddRandomClusterValue(&value.obj, "y0", yOffset, y0Offset);
-    f64 x1 = createAndAddRandomClusterValue(&value.obj, "x1", xOffset, x1Offset);
-    f64 y1 = createAndAddRandomClusterValue(&value.obj, "y1", yOffset, y1Offset);
+    String x0String = (String){.len = 2, .buffer = (u8*)"x0"};
+    String x1String = (String){.len = 2, .buffer = (u8*)"x1"};
+    String y0String = (String){.len = 2, .buffer = (u8*)"y0"};
+    String y1String = (String){.len = 2, .buffer = (u8*)"y1"};
 
-    sum += referenceHaversine(x0, y0, x1, y1);
+    f64    x0       = createAndAddRandomClusterValue(&value.obj, x0String, xOffset, x0Offset);
+    f64    y0       = createAndAddRandomClusterValue(&value.obj, y0String, yOffset, y0Offset);
+    f64    x1       = createAndAddRandomClusterValue(&value.obj, x1String, xOffset, x1Offset);
+    f64    y1       = createAndAddRandomClusterValue(&value.obj, y1String, yOffset, y1Offset);
+
+    f64    extra    = referenceHaversine(x0, y0, x1, y1);
+    sum += extra;
+
     addElementToJsonArray(array, value);
   }
 
   return sum;
 }
 
-static inline f64 createAndAddUniformClusterValue(JsonObject* obj, char* name, bool x)
+static inline f64 createAndAddUniformClusterValue(JsonObject* obj, String name, bool x)
 {
 
   f64        v     = x ? generateRandomXCoordinate(0) : generateRandomYCoordinate(0);
   JsonValue* value = (JsonValue*)malloc(sizeof(JsonValue));
   value->type      = JSON_NUMBER;
   value->number    = v;
-  addElementToJsonObject(obj, name, value);
+  addElementToJsonObject(obj, name, *value);
 
   return v;
 }
@@ -94,16 +101,19 @@ static f64 addUniformCoordinates(JsonArray* array)
 
   initJsonObject(&value.obj);
 
-  f64 x0 = createAndAddUniformClusterValue(&value.obj, "x0", true);
-  f64 y0 = createAndAddUniformClusterValue(&value.obj, "y0", false);
-  f64 x1 = createAndAddUniformClusterValue(&value.obj, "x1", true);
-  f64 y1 = createAndAddUniformClusterValue(&value.obj, "y1", false);
+  String x0String = (String){.len = 2, .buffer = (u8*)"x0"};
+  String x1String = (String){.len = 2, .buffer = (u8*)"x1"};
+  String y0String = (String){.len = 2, .buffer = (u8*)"y0"};
+  String y1String = (String){.len = 2, .buffer = (u8*)"y1"};
+
+  f64    x0       = createAndAddUniformClusterValue(&value.obj, x0String, true);
+  f64    y0       = createAndAddUniformClusterValue(&value.obj, y0String, false);
+  f64    x1       = createAndAddUniformClusterValue(&value.obj, x1String, true);
+  f64    y1       = createAndAddUniformClusterValue(&value.obj, y1String, false);
 
   addElementToJsonArray(array, value);
 
   f64 extra = referenceHaversine(x0, y0, x1, y1);
-  printf("(%lf, %lf),(%lf,%lf) -> ", x0, y0, x1, y1);
-  printf("%lf\n", extra);
   return extra;
 }
 
@@ -136,9 +146,9 @@ int main(int argc, char* argv[])
 
   initJsonArray(&pairs.arr);
 
-  addElementToJsonObject(&json.obj, "pairs", &pairs);
+  String pairString   = (String){.len = 5, .buffer = (u8*)"pairs"};
 
-  f64 haversineSum = 0;
+  f64    haversineSum = 0;
   if (uniform)
   {
     for (i64 i = 0; i < samples; i++)
@@ -162,7 +172,7 @@ int main(int argc, char* argv[])
   }
   haversineSum /= samples;
 
-  // debugJson(&json);
+  addElementToJsonObject(&json.obj, pairString, pairs);
   serializeToFile(&json, "test.json");
 
   FILE* filePtr;

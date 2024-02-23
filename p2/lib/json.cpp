@@ -1,7 +1,9 @@
 #include "json.h"
-#include "../haversine.h"
+#include "../arena.h"
 #include "common.h"
 #include "files.h"
+#include <cfloat>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -167,19 +169,19 @@ void addElementToJsonArray(JsonArray* array, JsonValue value)
   resizeArray(array);
   array->values[array->arraySize++] = value;
 }
-void initJsonArray(JsonArray* array)
+void initJsonArray(Arena* arena, JsonArray* array)
 {
   array->arraySize = 0;
   array->arrayCap  = 4;
   array->values    = (JsonValue*)malloc(sizeof(JsonValue) * array->arrayCap);
 }
-void initJsonObject(JsonObject* obj)
+void initJsonObject(Arena* arena, JsonObject* obj)
 {
-  TimeFunction;
+  // TimeFunction;
   obj->size   = 0;
   obj->cap    = 4;
-  obj->values = (JsonValue*)malloc(sizeof(JsonValue) * obj->cap);
-  obj->keys   = (String*)malloc(sizeof(String) * obj->cap);
+  obj->values = ArenaPushArray(arena, JsonValue, obj->cap);
+  obj->keys   = ArenaPushArray(arena, String, obj->cap);
 }
 
 void serializeJsonValue(JsonValue* value, FILE* filePtr);
@@ -242,8 +244,7 @@ void serializeJsonValue(JsonValue* value, FILE* filePtr)
   }
   case JSON_NUMBER:
   {
-    u64 converted = convertMe(value->number);
-    fprintf(filePtr, "%ld", converted);
+    fprintf(filePtr, "%.*g", DBL_DECIMAL_DIG, (double)value->number);
     break;
   }
   case JSON_ARRAY:
@@ -300,36 +301,58 @@ bool serializeToFile(Json* json, const char* filename)
   return true;
 }
 
+inline f64 convertJsonNumber(Buffer* buffer)
+{
+  f64 result = 0.0f;
+  while (isdigit(getCurrentCharBuffer(buffer)))
+  {
+    u8 ch  = getCurrentCharBuffer(buffer) - (u8)'0';
+    result = 10.0 * result + (f64)ch;
+    advanceBuffer(buffer);
+  }
+  return result;
+}
+
 f64 parseNumber(Buffer* buffer)
 {
-  TimeFunction;
-  u64 start = buffer->curr;
-  advanceBuffer(buffer);
-  while (isdigit(getCurrentCharBuffer(buffer)))
+  // TimeFunction;
+  f64 sign = getCurrentCharBuffer(buffer) == '-' ? -1.0f : 1.0f;
+  if (sign == -1.0f)
   {
     advanceBuffer(buffer);
   }
+
+  f64 result = convertJsonNumber(buffer);
+
   if (getCurrentCharBuffer(buffer) == '.')
   {
     advanceBuffer(buffer);
+    f64 c = 1.0 / 10.0;
     while (isdigit(getCurrentCharBuffer(buffer)))
     {
+      u8 ch = getCurrentCharBuffer(buffer) - (u8)'0';
+      result += c * (f64)ch;
+      c *= 1.0 / 10.0;
       advanceBuffer(buffer);
     }
   }
 
-  u64  size                    = buffer->curr - start;
-  char prev                    = buffer->buffer[start + size];
-  buffer->buffer[start + size] = '\0';
+  char curr = getCurrentCharBuffer(buffer);
+  if (curr == 'e' || curr == 'E')
+  {
+    advanceBuffer(buffer);
+    f64 exponentSign = getCurrentCharBuffer(buffer) == '-' ? -1.0f : 1.0f;
+    advanceBuffer(buffer);
+    f64 exponent = convertJsonNumber(buffer) * exponentSign;
+    result *= pow(10.0, exponent);
+  }
 
-  u64 res                      = strtoul((char*)&buffer->buffer[start], NULL, 10);
-  buffer->buffer[start + size] = prev;
-
-  return *(f64*)&res;
+  return sign * result;
 }
+
 bool parseString(String* key, Buffer* buffer)
 {
-  TimeFunction;
+  // TimeFunction;
   advanceBuffer(buffer);
   u64 start = buffer->curr;
   while (getCurrentCharBuffer(buffer) != '"')
@@ -364,10 +387,10 @@ bool consumeToken(Buffer* buffer, char expected)
   return true;
 }
 
-bool parseJsonValue(JsonValue* value, Buffer* buffer);
-bool parseJsonArray(JsonArray* arr, Buffer* buffer);
+bool parseJsonValue(Arena* arena, JsonValue* value, Buffer* buffer);
+bool parseJsonArray(Arena* arena, JsonArray* arr, Buffer* buffer);
 
-bool parseKeyValuePair(JsonObject* obj, Buffer* buffer)
+bool parseKeyValuePair(Arena* arena, JsonObject* obj, Buffer* buffer)
 {
   resizeObject(obj);
 
@@ -383,7 +406,7 @@ bool parseKeyValuePair(JsonObject* obj, Buffer* buffer)
     return false;
   }
 
-  res = parseJsonValue(&obj->values[obj->size], buffer);
+  res = parseJsonValue(arena, &obj->values[obj->size], buffer);
   if (!res)
   {
     return false;
@@ -394,7 +417,7 @@ bool parseKeyValuePair(JsonObject* obj, Buffer* buffer)
   return true;
 }
 
-bool parseJsonObject(JsonObject* obj, Buffer* buffer)
+bool parseJsonObject(Arena* arena, JsonObject* obj, Buffer* buffer)
 {
   advanceBuffer(buffer);
   skipWhitespace(buffer);
@@ -402,7 +425,7 @@ bool parseJsonObject(JsonObject* obj, Buffer* buffer)
   // end or string
   while (getCurrentCharBuffer(buffer) != '}')
   {
-    bool res = parseKeyValuePair(obj, buffer);
+    bool res = parseKeyValuePair(arena, obj, buffer);
     if (!res)
     {
       printf("Failed to parse key value pair\n");
@@ -420,7 +443,7 @@ bool parseJsonObject(JsonObject* obj, Buffer* buffer)
   return true;
 }
 
-bool parseJsonArray(JsonArray* arr, Buffer* buffer)
+bool parseJsonArray(Arena* arena, JsonArray* arr, Buffer* buffer)
 {
   TimeBlock("JsonArray");
 
@@ -430,7 +453,7 @@ bool parseJsonArray(JsonArray* arr, Buffer* buffer)
   while (getCurrentCharBuffer(buffer) != ']')
   {
     resizeArray(arr);
-    res = parseJsonValue(&arr->values[arr->arraySize], buffer);
+    res = parseJsonValue(arena, &arr->values[arr->arraySize], buffer);
     if (!res)
     {
       return false;
@@ -458,9 +481,9 @@ bool parseKeyword(Buffer* buffer, const char* expected, u8 len)
   return true;
 }
 
-bool parseJsonValue(JsonValue* value, Buffer* buffer)
+bool parseJsonValue(Arena* arena, JsonValue* value, Buffer* buffer)
 {
-  TimeFunction;
+  // TimeFunction;
   char currentChar = getCurrentCharBuffer(buffer);
   if (isdigit(currentChar) || currentChar == '-')
   {
@@ -479,14 +502,14 @@ bool parseJsonValue(JsonValue* value, Buffer* buffer)
   case '{':
   {
     value->type = JSON_OBJECT;
-    initJsonObject(&value->obj);
-    return parseJsonObject(&value->obj, buffer);
+    initJsonObject(arena, &value->obj);
+    return parseJsonObject(arena, &value->obj, buffer);
   }
   case '[':
   {
     value->type = JSON_ARRAY;
-    initJsonArray(&value->arr);
-    return parseJsonArray(&value->arr, buffer);
+    initJsonArray(arena, &value->arr);
+    return parseJsonArray(arena, &value->arr, buffer);
   }
   case 't':
   {
@@ -531,9 +554,9 @@ bool parseJsonValue(JsonValue* value, Buffer* buffer)
   }
 }
 
-bool deserializeFromString(Json* json, String fileContent)
+bool deserializeFromString(Json* json, Arena* arena, String fileContent)
 {
-  TimeFunction;
+  // TimeFunction;
   bool   res;
   bool   first = false;
 
@@ -549,16 +572,16 @@ bool deserializeFromString(Json* json, String fileContent)
     case '{':
     {
       json->headType = JSON_OBJECT;
-      initJsonObject(&json->obj);
-      res   = parseJsonObject(&json->obj, &buffer);
+      initJsonObject(arena, &json->obj);
+      res   = parseJsonObject(arena, &json->obj, &buffer);
       first = true;
       break;
     }
     case '[':
     {
       json->headType = JSON_ARRAY;
-      initJsonArray(&json->array);
-      res   = parseJsonArray(&json->array, &buffer);
+      initJsonArray(arena, &json->array);
+      res   = parseJsonArray(arena, &json->array, &buffer);
       first = true;
       break;
     }
@@ -577,7 +600,7 @@ bool deserializeFromString(Json* json, String fileContent)
     {
       printf("Default: %c\n", getCurrentCharBuffer(&buffer));
       json->headType = JSON_VALUE;
-      res            = parseJsonValue(&json->value, &buffer);
+      res            = parseJsonValue(arena, &json->value, &buffer);
       first          = true;
       break;
     }
@@ -649,7 +672,7 @@ void freeJsonArray(JsonArray* array)
 }
 void freeJson(Json* json)
 {
-  TimeFunction;
+  // TimeFunction;
 
   switch (json->headType)
   {

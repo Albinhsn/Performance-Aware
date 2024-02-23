@@ -1,6 +1,7 @@
 #ifndef JSON_H
 #define JSON_H
 
+#include "../arena.h"
 #include "common.h"
 #include "string.h"
 #include <stdbool.h>
@@ -62,13 +63,16 @@ struct Json
 };
 typedef struct Json Json;
 
-void                addElementToJsonObject(JsonObject* obj, char* key, JsonValue* value);
-void                addElementToJsonArray(JsonArray* array, JsonValue value);
-void                initJsonArray(JsonArray* array);
-void                initJsonObject(JsonObject* obj);
-bool                deserializeFromString(Json* json, String fileContent);
+void                addElementToJsonObject(Arena* arena, JsonObject* obj, String key, JsonValue value);
+void                addElementToJsonArray(Arena* arena, JsonArray* array, JsonValue value);
+void                initJsonArray(Arena* arena, JsonArray* array);
+void                initJsonObject(Arena* arena, JsonObject* obj);
+bool                deserializeFromString(Arena* arena, Json* json, String fileContent);
 bool                serializeToFile(Json* json, const char* filename);
 void                debugJson(Json* json);
+void                debugJsonArray(JsonArray* array);
+void                debugJsonObject(JsonObject* obj);
+void                debugJsonValue(JsonValue* value);
 
 JsonValue*          lookupJsonElement(JsonObject* obj, const char* key);
 void                freeJsonObject(JsonObject* obj);
