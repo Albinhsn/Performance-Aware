@@ -9,6 +9,7 @@
 #include <cstring>
 #include <ctype.h>
 
+
 #define ADVANCE(curr) ((*curr)++)
 
 struct Buffer
@@ -17,7 +18,8 @@ struct Buffer
   u64 curr;
   u64 len;
 };
-typedef struct Buffer Buffer;
+
+extern "C" void parseString2(String * key, Buffer * buffer);
 
 static inline u8      getCurrentCharBuffer(Buffer* buffer)
 {
@@ -350,6 +352,7 @@ f64 parseNumber(Buffer* buffer)
 
 void parseString(String* key, Buffer* buffer)
 {
+  // TimeFunction;
   advanceBuffer(buffer);
   u64 start   = buffer->curr;
   key->buffer = &buffer->buffer[start];
@@ -667,7 +670,6 @@ void freeJsonArray(JsonArray* array)
 }
 void freeJson(Json* json)
 {
-  // TimeFunction;
 
   switch (json->headType)
   {

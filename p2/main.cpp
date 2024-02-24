@@ -129,12 +129,10 @@ static inline void cleanup(String* string, String* fileContent)
 int main()
 {
   initProfiler();
-  u64   stackSize   = ((u64)(1024 * 1024 * 1024)) * 3;
-  u8*   stackMemory = (u8*)malloc(sizeof(u8) * stackSize);
-  Arena arena;
-  arena.ptr     = 0;
-  arena.memory  = (u64)stackMemory;
-  arena.maxSize = stackSize;
+  u64    stackSize   = ((u64)(1024 * 1024 * 1024)) * 3;
+  u8*    stackMemory = (u8*)malloc(sizeof(u8) * stackSize);
+
+  Arena  arena       = (Arena){.memory = (u64)stackMemory, .ptr = 0, .maxSize = stackSize};
 
   Json   json;
   String fileContent;
